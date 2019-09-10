@@ -1,0 +1,5 @@
+"0","trips_s[countrylist, on = ""country_code"", region := i.region]
+"
+"2","Error in `[.data.table`(trips_s, countrylist, on = ""country_code"", `:=`(region,  : 
+  Column(s) [country_code] not found in i
+"
