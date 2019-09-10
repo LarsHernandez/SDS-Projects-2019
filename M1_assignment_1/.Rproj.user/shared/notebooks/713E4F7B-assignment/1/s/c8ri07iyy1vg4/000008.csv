@@ -1,0 +1,5 @@
+"0","e2 <- trips_s[, .(mean_dur = mean(dur_days)), by = .(year(date_start), region)][year>1970 & year < 2019]"
+"0","ggplot(e2, aes(year, mean_dur)) + "
+"0","  scale_y_continuous() +"
+"0","  geom_line() + "
+"0","  facet_wrap(~region)"
