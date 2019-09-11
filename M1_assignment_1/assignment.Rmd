@@ -2,7 +2,13 @@
 title: "M1 Mini Assignment 1"
 author: "Lars Nielsen"
 date: "9/9/2019"
-output: html_document
+output:
+  html_document:
+    theme: lumen
+    toc: yes
+    toc_float: yes
+  pdf_document:
+    toc: yes
 ---
 
 # M1 Mini-Assignment 1
@@ -15,9 +21,10 @@ You are given 2 datasets from https://nomadlist.com/ - A community page for remo
 
 - Finally, you find a countrylist file that holds countrycodes, contrynames and region-associations https://github.com/SDS-AAU/M1-2019/raw/master/data/countrylist.csv
 
-```{r message=FALSE, include=FALSE}
+```{r message=FALSE, warning=FALSE}
 library(data.table)
 library(ggplot2)
+library(magrittr)
 
 trips       <- fread("https://github.com/SDS-AAU/M1-2019/raw/master/data/trips.csv")
 people      <- fread("https://github.com/SDS-AAU/M1-2019/raw/master/data/people.csv")
@@ -31,7 +38,8 @@ Submission: Wednesday 11.9. 12:00.
 Peergrade.io (link + submission details will be sent out onMonday, 9.9)
 
 ## 1. Preprocessing
-###a.Trips: transform dates into timestamps (note: in Python, you will have to ‘coerce’ errors forfaulty dates)
+### a. Trips: transform dates into timestamps 
+(note: in Python, you will have to ‘coerce’ errors forfaulty dates)
 ```{r}
 trips[,c("date_end", "date_start") := .(as.Date(date_end, "%Y-%m-%d"), as.Date(date_start, "%Y-%m-%d"))]
 
@@ -39,7 +47,8 @@ head(trips$date_end, 5)
 ```  
 
 
-###b.Calculate trip duration in days (you can use loops, list comprehensions ormap-lambda-functions (python) to create a column that holds the numerical value of theday. You can also use the “datetime” package.)
+### b. Calculate trip duration in days 
+(you can use loops, list comprehensions ormap-lambda-functions (python) to create a column that holds the numerical value of theday. You can also use the “datetime” package.)
 ```{r}
 trips[, dur_days := date_end - date_start]
 
@@ -47,7 +56,8 @@ head(trips$dur_days, 5)
 ```  
 
 
-###c. Filter extreme (fake?) observations for durations as well as dates - start and end (trips thatlast 234565 days / are in the 17th or 23rd century)The minimum duration of a trip is 1 day!Hint: use percentiles/quantiles to set boundaries for extreme values - between 1 and 97, calculate and store the boundaries before subsetting. Rhint: Use percent_rank(as.numeric(variable)) to create percentiles
+### c. Filter extreme (fake?) observations 
+for durations as well as dates - start and end (trips thatlast 234565 days / are in the 17th or 23rd century)The minimum duration of a trip is 1 day!Hint: use percentiles/quantiles to set boundaries for extreme values - between 1 and 97, calculate and store the boundaries before subsetting. Rhint: Use percent_rank(as.numeric(variable)) to create percentiles
 ```{r message=FALSE, warning=FALSE}
 trips[, quantile := dplyr::percent_rank(as.numeric(trips$dur_days))]
 trips_s <- trips[quantile >= 0.01 & quantile <= 0.97]
@@ -57,9 +67,13 @@ range(trips_s$dur_days)
 ```
 
   
-###d. Join the countrylist data to the trips data-frame using the countrycode as a key
+### d. Join the countrylist data 
+to the trips data-frame using the countrycode as a key
 ```{r}
 countrylist[, country_code := alpha_2]
+trips_s$country_code[trips_s$country_code == "UK"] <- "GB" # United Kingdom coded as both UK and GB
+trips_s$country_code[trips_s$country_code == ""] <- "empty" # Empty country codes coded as africa in countrylist
+
 trips_s[countrylist, on = "country_code", c("region", "sub_region") := .(i.region, i.sub_region)]
 
 head(trips_s[,.(country_code, dur_days, region, sub_region)])
@@ -72,25 +86,26 @@ head(trips_s[,.(country_code, dur_days, region, sub_region)])
 
 
 
-##2.People
-###a.How many people have at least a “High School” diploma? Hint: For this calculation remove missing value-rows or fill with “False”
+## 2. People
+### a. How many people have at least a “High School” diploma? 
 ```{r}
 people_s <- people[education_raw != ""]
 table(people_s$education_raw)
 
-people_s[,.N]
-
-people[, high_school := education_raw %like% "High|Master|Bachelor"]
+paste0("There are ",people_s[,.N], " individuals in the dataset now that has atleast High School")
 ```
 
 
-###b.How many people working with “Software Dev” have a “Master's Degree”?
+### b. How many people working with “Software Dev” have a “Master's Degree”?
 ```{r}
-people_s[work_raw %like% "Software Dev" & education_raw %like% "Master", .N]
+res <- people_s[work_raw %like% "Software Dev" & education_raw %like% "Master", .N]
+
+paste0("There are ", res, " induviduals who work with software development and have a masters degree")
 ```
 
 
-###c.Who is the person with a Master's Degree that has the highest number of followers?[Explore who this person is. :-) ]
+### c. Who is the person ... 
+with a Master's Degree that has the highest number of followers?[Explore who this person is. :-) ]
 ```{r}
 c <- people_s[education_raw %like% "Master"][order(-followers)]
 
@@ -101,15 +116,16 @@ people_s[username == "@levelsio"]
 
 
 
-##3.Trips
-###a.Which country received the highest number of trips?
+## 3. Trips
+### a. Which country received the highest number of trips?
 ```{r}
 a <- trips_s[, .N, by = country][order(-N)]
 head(a)
 ```
 
   
-###b.Which country received the highest number of trips in 2017? Use the start of trips as a timereference.  (python: use datetimeindex created in 1 as a selector)?Rhint: Use functions from lubridate package to extract year.
+### b. Which country received the highest number of trips in 2017? 
+Use the start of trips as a timereference.  (python: use datetimeindex created in 1 as a selector)?Rhint: Use functions from lubridate package to extract year.
 
 ```{r}
 b <- trips_s[year(date_start) == 2017, .N, by = country][order(-N)]
@@ -117,7 +133,8 @@ head(b)
 ```
   
   
-###c.Which is the country in 'Eastern Asia' where travellers spent on average least time whengoing there? Provide a visualization.
+### c. Which is the country in 'Eastern Asia' ...
+where travellers spent on average least time whengoing there? Provide a visualization.
 ```{r}
 c <- trips_s[sub_region == 'Eastern Asia', .(mean_dur = mean(dur_days), total = .N), by = country][order(mean_dur)]
 c
@@ -129,7 +146,8 @@ ggplot(c, aes(reorder(country, mean_dur), mean_dur)) +
 ```
 
 
-###d.Do nomads that indicate working in “Software Dev” tend to have shorter or longer trips onaverage?
+### d. Do nomads that ...
+indicate working in “Software Dev” tend to have shorter or longer trips onaverage?
 ```{r}
 trips_s[people, on = "username", c("work_raw") := .(i.work_raw)]
 trips_s[, dev := work_raw %like% "Software Dev"]
@@ -137,21 +155,70 @@ trips_s[,.(mean_dur = mean(dur_days)), by = dev]
 ```
 
   
-###e.Visualize over-time median trip duration overall (bonus: and split by world-region).You will get a weird looking plot :-)
+### e. Visualize over-time median trip duration 
+overall (bonus: and split by world-region).You will get a weird looking plot :-)
 ```{r}
 e1 <- trips_s[, .(mean_dur = mean(dur_days)), by = year(date_start)][year>1970 & year < 2019]
 
 ggplot(e1, aes(year, mean_dur)) + 
   scale_y_continuous() +
-  geom_line()
+  geom_line(size=1) + 
+  labs(title="Over-time median trip duration overall")
 
 e2 <- trips_s[, .(mean_dur = mean(dur_days)), by = .(year(date_start), region)][year>1970 & year < 2019]
 
 ggplot(e2, aes(year, mean_dur)) + 
   scale_y_continuous() +
-  geom_line() + 
-  facet_wrap(~region)
+  geom_line(size=1) + 
+  facet_wrap(~region) + 
+  labs(title="Over-time median trip duration overall - by region")
+
+table(trips_s$region, useNA="always")
+
+vec <- sort(table(trips_s$country_code, is.na(trips_s$region))[,2])
+subset(vec, vec >0)
+
 ```
+
+```{r fig.height=6, fig.width=8}
+trips_s[, .N, by = .(year(date_start), region)][year>1970 & year < 2019] %>% 
+  tidyr::complete(year, tidyr::nesting(region), fill = list(N = 0)) %>% 
+  ggplot(aes(year, N, fill = region)) + 
+  scale_fill_viridis_d() +
+  geom_area(position = "fill") + 
+  labs(title="Percentage of trips per year - by region") + 
+  theme_minimal()
+
+trips_s[, .N, by = .(year(date_start), sub_region)][year>1970 & year < 2019] %>% 
+  tidyr::complete(year, tidyr::nesting(sub_region), fill = list(N = 0)) %>% 
+  ggplot(aes(year, N, fill = sub_region)) + 
+  scale_fill_viridis_d(option="magma") +
+  geom_area(position = "fill") + 
+  labs(title="Percentage of trips per year - by subregion") + 
+  theme_minimal()
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
