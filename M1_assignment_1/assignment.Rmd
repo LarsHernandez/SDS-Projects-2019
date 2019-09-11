@@ -3,16 +3,17 @@ title: "M1 Mini Assignment 1"
 author: "Lars Nielsen"
 date: "9/9/2019"
 output:
+  pdf_document:
+    toc: yes
   html_document:
     theme: lumen
     toc: yes
     toc_float: yes
-  pdf_document:
-    toc: yes
 ---
 
 # M1 Mini-Assignment 1
 
+### Link to github .Rmd https://github.com/LarsHernandez/SDS-Projects-2019/blob/master/M1_assignment_1/assignment.Rmd 
 You are given 2 datasets from https://nomadlist.com/ - A community page for remote workersworldwide.
 
 - The trips data holds ~46k individual trips of travellers on the platform https://github.com/SDS-AAU/M1-2019/raw/master/data/trips.csv
@@ -25,6 +26,11 @@ You are given 2 datasets from https://nomadlist.com/ - A community page for remo
 library(data.table)
 library(ggplot2)
 library(magrittr)
+
+# I load the data with fread (to the one doing the peer review i'm sorry but the
+# assignment is done in data.table, hope you can understand what is happening, also
+# ill just do notes here in the code chunks, and only where i don't think it's
+# obvious what is happening)
 
 trips       <- fread("https://github.com/SDS-AAU/M1-2019/raw/master/data/trips.csv")
 people      <- fread("https://github.com/SDS-AAU/M1-2019/raw/master/data/people.csv")
@@ -41,8 +47,9 @@ Peergrade.io (link + submission details will be sent out onMonday, 9.9)
 ### a. Trips: transform dates into timestamps 
 (note: in Python, you will have to ‘coerce’ errors forfaulty dates)
 ```{r}
-trips[,c("date_end", "date_start") := .(as.Date(date_end, "%Y-%m-%d"), as.Date(date_start, "%Y-%m-%d"))]
-
+trips[,c("date_end", "date_start") := .(as.Date(date_end, "%Y-%m-%d"), 
+                                        as.Date(date_start, "%Y-%m-%d"))]
+class(trips$date_end)
 head(trips$date_end, 5)
 ```  
 
@@ -52,6 +59,7 @@ head(trips$date_end, 5)
 ```{r}
 trips[, dur_days := date_end - date_start]
 
+class(trips$dur_days)
 head(trips$dur_days, 5)
 ```  
 
@@ -62,6 +70,7 @@ for durations as well as dates - start and end (trips thatlast 234565 days / are
 trips[, quantile := dplyr::percent_rank(as.numeric(trips$dur_days))]
 trips_s <- trips[quantile >= 0.01 & quantile <= 0.97]
 
+# The range before and after the subsetting by the quantiles: 
 range(na.omit(trips$dur_days))
 range(trips_s$dur_days)
 ```
@@ -71,10 +80,13 @@ range(trips_s$dur_days)
 to the trips data-frame using the countrycode as a key
 ```{r}
 countrylist[, country_code := alpha_2]
-trips_s$country_code[trips_s$country_code == "UK"] <- "GB" # United Kingdom coded as both UK and GB
-trips_s$country_code[trips_s$country_code == ""] <- "empty" # Empty country codes coded as africa in countrylist
+# United Kingdom coded as both UK and GB
+trips_s$country_code[trips_s$country_code == "UK"] <- "GB"
+# Empty country codes coded as africa in countrylist
+trips_s$country_code[trips_s$country_code == ""]   <- "empty"
 
-trips_s[countrylist, on = "country_code", c("region", "sub_region") := .(i.region, i.sub_region)]
+trips_s[countrylist, on = "country_code", 
+        c("region", "sub_region") := .(i.region, i.sub_region)]
 
 head(trips_s[,.(country_code, dur_days, region, sub_region)])
 ```
@@ -107,9 +119,9 @@ paste0("There are ", res, " induviduals who work with software development and h
 ### c. Who is the person ... 
 with a Master's Degree that has the highest number of followers?[Explore who this person is. :-) ]
 ```{r}
-c <- people_s[education_raw %like% "Master"][order(-followers)]
+res <- people_s[education_raw %like% "Master"][order(-followers)]
 
-head(c)
+head(res[,c("username", "followers")])
 people_s[username == "@levelsio"]
 ```
 
@@ -158,14 +170,16 @@ trips_s[,.(mean_dur = mean(dur_days)), by = dev]
 ### e. Visualize over-time median trip duration 
 overall (bonus: and split by world-region).You will get a weird looking plot :-)
 ```{r}
-e1 <- trips_s[, .(mean_dur = mean(dur_days)), by = year(date_start)][year>1970 & year < 2019]
+e1 <- trips_s[, .(mean_dur = mean(dur_days)), by = year(date_start)][
+  year>1970 & year < 2019]
 
 ggplot(e1, aes(year, mean_dur)) + 
   scale_y_continuous() +
   geom_line(size=1) + 
   labs(title="Over-time median trip duration overall")
 
-e2 <- trips_s[, .(mean_dur = mean(dur_days)), by = .(year(date_start), region)][year>1970 & year < 2019]
+e2 <- trips_s[, .(mean_dur = mean(dur_days)), by = .(year(date_start), region)][
+  year>1970 & year < 2019]
 
 ggplot(e2, aes(year, mean_dur)) + 
   scale_y_continuous() +
@@ -173,14 +187,18 @@ ggplot(e2, aes(year, mean_dur)) +
   facet_wrap(~region) + 
   labs(title="Over-time median trip duration overall - by region")
 
+# How manny NA's do we still have?
 table(trips_s$region, useNA="always")
 
+# What are those codes that it doesn't know
 vec <- sort(table(trips_s$country_code, is.na(trips_s$region))[,2])
 subset(vec, vec >0)
 
 ```
 
 ```{r fig.height=6, fig.width=8}
+# Two extra plots
+
 trips_s[, .N, by = .(year(date_start), region)][year>1970 & year < 2019] %>% 
   tidyr::complete(year, tidyr::nesting(region), fill = list(N = 0)) %>% 
   ggplot(aes(year, N, fill = region)) + 
