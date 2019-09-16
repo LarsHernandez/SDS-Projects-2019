@@ -1,0 +1,342 @@
+---
+title: "Untitled"
+author: "Andreas Gravers, Lars Nielsen, Jens Stoustrup"
+date: "14/9/2019"
+output: html_document
+---
+# SDS 2019: M1 Assignment 2 
+  
+Description This time you will work with Pokemon data. No data munging needed. Just old-school ML. 
+Data You will find the dataset for this assignment under: https://github.com/SDS-AAU/M1-2019/raw/master/data/pokemon.csv 
+ 
+It contains data on 800 Pokemon from the 1st to the 6th generation.
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(ggforce)
+library(caret)
+library(yardstick)
+library(knitr)
+library(ggthemes)
+library(ggridges)
+
+poke <- read_csv("https://github.com/SDS-AAU/M1-2019/raw/master/data/pokemon.csv")
+
+bg <- "grey80"
+
+th <- theme(plot.title        = element_text(size = 20),
+            plot.background   = element_rect(fill = bg, color = NA),
+            panel.background  = element_rect(fill = bg,       color = NA), 
+            legend.background = element_rect(fill = bg,       color = NA),
+            legend.key        = element_rect(fill = NA,       color = NA),
+            strip.background  = element_rect(fill = NA,       color = NA),
+            panel.border      = element_rect(fill = NA,       color = "grey20", size = 0.3),
+            panel.grid        = element_line(color = NA),
+            title             = element_text(color = "black"),
+            plot.subtitle     = element_text(color = "grey40"),
+            plot.caption      = element_text(color = "grey70"),
+            strip.text        = element_text(face  = "bold"),
+            axis.text         = element_text(color = "black"),
+            axis.ticks        = element_line(color = "black"),
+            plot.margin       = unit(c(0.2, 0.1, 0.2, 0.1), "cm"))
+```
+
+
+
+## 1. Unsupervised ML
+
+### a. PCA analysis
+Execute a PCA analysis on all numerical variables in the dataset. Hint: Don't forget to scale them before. Use 4 components. What is the cumulative explained variance ratio? 
+
+```{r}
+poke_scaled <- poke %>% 
+  select(HitPoints, Attack, Defense, SpecialAttack, SpecialDefense, Speed, Generation) %>% 
+  map_dfc(.f = scale)
+
+PCA <- prcomp(poke_scaled, rank. = 4)
+summary(PCA)
+
+paste0("The cumulative explained variance ratio is ", summary(PCA)$importance[3,4])
+```
+
+```{r}
+loadings <- PCA$rotation %>% 
+  abs() %>% 
+  sweep(2, colSums(.), "/") %>% 
+  as.data.frame %>% 
+  rownames_to_column("name")
+
+loadings[,-1] <- apply(loadings[,-1], MARGIN = 2, FUN = round, digits=2)
+
+a <- loadings %>% dplyr::select(name, PC1) %>% arrange(desc(PC1))
+b <- loadings %>% dplyr::select(name, PC2) %>% arrange(desc(PC2))
+c <- loadings %>% dplyr::select(name, PC3) %>% arrange(desc(PC3))
+d <- loadings %>% dplyr::select(name, PC4) %>% arrange(desc(PC4))
+
+kable(cbind(a,b,c,d))
+```
+
+### b. Clustering
+Perform a cluster analysis (either k-means or hierarchical clustering algorithm) on all numerical variables (scaled & before PCA). Apply the elbow method to determine a “pragmatic” number of clusters. 
+
+
+```{r fig.height=3, fig.width=9}
+wss <- 0
+for (i in 1:15) {
+  wss[i] <- kmeans(poke_scaled, centers = i, nstart=20)$tot.withinss
+}
+
+scree <- tibble(wss, N=1:15)
+
+ggplot(scree, aes(N, wss)) + 
+  geom_line(size=1.5, color="#4f6980") + 
+  geom_point(size=3, shape=21, fill="white", color="#4f6980", stroke=2) + 
+  scale_x_continuous(breaks=c(1:15)) + 
+  labs(title="Scree plot of number of clusters", x="Number of clusters", y="WSS")
+
+```
+
+```{r fig.height=8, fig.width=10}
+
+km <- poke_scaled %>% 
+  kmeans(centers = 4, nstart = 20)
+
+poke_scaled$cluster <- as.factor(km$cluster)
+
+ex <- km$centers %>% as.tibble %>% mutate(N=1:4) %>% gather(variable, value, -N)
+
+ggplot(poke_scaled, aes(x = .panel_x, y = .panel_y, colour = cluster, fill = cluster)) + 
+  geom_point(alpha = 0.5, position = 'auto') + 
+  geom_autodensity(alpha = 0.3, colour = NA, position = 'identity') + 
+  geom_density2d(alpha = 0.5) +
+  scale_color_tableau(palette = "Miller Stone", type = "regular") +
+  scale_fill_tableau(palette = "Miller Stone", type = "regular") +
+  facet_matrix(vars(-cluster, -Generation), layer.diag = 2, layer.upper = 3) + 
+  labs(title="Kmeans clusters by each variable (-Generation)")
+```
+
+
+
+
+
+### c. Visualization
+Visualize the first 2 principal components and color the datapoints by cluster. 
+```{r fig.height=5, fig.width=10}
+
+df <- tibble(PC1 = PCA$x[,1], PC2 = PCA$x[,2], cluster=as.factor(km$cluster))
+
+
+ggplot(df, aes(PC1, PC2, col = cluster)) + 
+  geom_point(data=df %>% select(-cluster), aes(PC1, PC2), inherit.aes = F, color="grey75", alpha=0.2) +
+  geom_point(alpha=0.5) + 
+  scale_color_tableau(palette = "Miller Stone", type = "regular") + 
+  facet_wrap(~cluster) + 
+  labs(title="Kmeans clusters by first 2 PCA factors")
+```
+
+
+
+
+
+### d. Inspection
+Inspect the distribution of the variable “Type1” across clusters. Does the algorithm separate the different types of pokemon? 
+
+```{r fig.height=5, fig.width=10}
+
+poke_scaled %>% mutate(Type1 = poke$Type1, 
+                       cluster = as.factor(km$cluster)) %>% 
+  group_by(Type1, cluster) %>% 
+  summarize(N=n()) %>% 
+  ggplot(aes(Type1, N, fill=cluster)) + geom_col(position = "dodge") + 
+  scale_fill_tableau(palette = "Miller Stone", type = "regular") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  labs(title="Type of pokemon within each cluster")
+
+poke_scaled %>% mutate(Type1 = poke$Type1, 
+                       cluster = as.factor(km$cluster)) %>% 
+  group_by(Type1, cluster) %>% 
+  summarize(N=n()) %>% 
+  ggplot(aes(Type1, N, fill=cluster)) + geom_col(position = "fill") + 
+  scale_fill_tableau(palette = "Miller Stone", type = "regular") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  labs(title="Type of pokemon within each cluster", y="%")
+```
+
+
+
+
+
+
+
+
+
+
+## 2. Supervised ML 
+Your task will be to predict the variable “legendary”, indicating if the pokemon is a legendary one or not. 
+
+
+### a. Preprocessing 
+Perform necessary ML preprocessing of your data if deemed necessary. 
+```{r fig.height=5, fig.width=10}
+poke_ml <- poke %>% 
+  select(HitPoints, Attack, Defense, SpecialAttack, SpecialDefense, Speed, Generation, Legendary) %>% 
+  map_dfc(.f = scale) %>% 
+  mutate(Legendary = as.factor(poke$Legendary))
+
+head(poke_ml)
+
+poke_ml %>%
+  gather(variable, value, -Legendary) %>%
+  ggplot(aes(y = as.factor(variable), 
+             fill =  Legendary, 
+             x = percent_rank(value)) ) +
+  scale_fill_tableau(palette = "Miller Stone", type = "regular") +
+  geom_density_ridges(alpha = 0.85) + 
+  labs(title = "Distribution of different variables", subtitle = "for legendary and non-legendary",
+       fill="Legendary", y="Feature", x="Distribution") + theme(axis.title.y = element_blank())
+```
+
+
+### b. Split 
+Split the data in a training (75%) and test (25%) dataset. 
+```{r}
+
+index    <- createDataPartition(poke_ml$Legendary, p = 0.75, list = FALSE)
+training <- poke_ml[index,] 
+test     <- poke_ml[-index,] 
+
+dim(training)
+dim(test)
+```
+
+
+
+### c. Cross-validation
+Define a n-fold cross-validation workflow for your model testing. 
+```{r}
+cv <- trainControl(method = "cv", number = 5)
+```
+
+
+
+
+
+
+### d. Models
+Fit three separate models on your training data, where you predict the “legendary” variable. Use a 1. Logistic regression, 2. Decision tree, and 3. another algorithm of choice to do so.  
+```{r}
+fit_log <- train(Legendary ~ .,
+                 data      = training,
+                 trControl = cv, 
+                 tuneGrid  = expand.grid(alpha  = 0.5, 
+                                         lambda = 0),
+                 method    = "glmnet", 
+                 family    = "binomial",
+                 metric    = 'Accuracy')
+
+fit_glm <- train(Legendary ~ .,
+                 data      = training,
+                 trControl = cv, 
+                 tuneGrid  = expand.grid(alpha  = seq(0, 1, by = 0.1), 
+                                         lambda = 10^seq(1, -4, by = -0.2)),
+                 method    = "glmnet", 
+                 family    = "binomial",
+                 metric    = 'Accuracy')
+
+
+fit_raf <- train(Legendary ~ ., 
+                 data      = training,
+                 trControl = cv,
+                 tuneGrid  = expand.grid(.mtry = (1:7)),
+                 method    = 'rf',
+                 metric    = 'Accuracy')
+
+fit_svm <- train(Legendary ~ ., 
+                 data      = training,
+                 trControl = cv,
+                 tuneGrid  = expand.grid(C = 10^seq(1, -1, by = -0.02)),
+                 method    = 'svmLinear',
+                 metric    = 'Accuracy')
+
+fit_lda <- train(Legendary ~ .,
+                 data      = training,
+                 trControl = cv, 
+                 method    = "lda", 
+                 metric    = 'Accuracy')
+
+
+```
+
+### e. Prediction
+Use the fitted models to predict the “legendary” variable in your test data. 
+```{r}
+pred_log <- predict(fit_log,  test)
+conf_log <- table(pred_log, test$Legendary)
+
+pred_glm <- predict(fit_glm,  test)
+conf_glm <- table(pred_glm, test$Legendary)
+
+pred_svm <- predict(fit_svm,  test)
+conf_svm <- table(pred_svm, test$Legendary)
+
+pred_raf <- predict(fit_raf,  test)
+conf_raf <- table(pred_raf, test$Legendary)
+
+pred_lda <- predict(fit_lda,  test)
+conf_lda <- table(pred_lda, test$Legendary)
+
+
+#kable(list(conf_log, conf_glm, conf_svm, conf_raf, conf_lda))
+
+log <- rbind(spec(conf_log), precision(conf_log), accuracy(conf_log))
+raf <- rbind(spec(conf_raf), precision(conf_raf), accuracy(conf_raf))
+glm <- rbind(spec(conf_glm), precision(conf_glm), accuracy(conf_glm))
+svm <- rbind(spec(conf_svm), precision(conf_svm), accuracy(conf_svm))
+lda <- rbind(spec(conf_lda), precision(conf_lda), accuracy(conf_lda))
+
+
+#kable(glm, caption = "Glmnet")
+#kable(raf, caption = "Random Forrest")
+#kable(svm, caption = "Support Vector Machine")
+```
+
+
+
+
+### f. Evaluation
+Evaluate the performance of these 3 models by comparing the predicted and the true values of “legendary” in the test data. To do so, also create a confusion matrix. 
+
+```{r fig.height=5, fig.width=10}
+log$model <- "Logistic Regression"
+raf$model <- "Random Forrest"
+glm$model <- "Elastic Net Regression"
+svm$model <- "Support Vector Machines"
+lda$model <- "Linear Discriminant Analysis"
+
+
+df <- rbind(log, raf, glm, svm, lda)
+
+ggplot(df, aes(.metric, .estimate, fill = reorder(model, desc(.estimate)))) + 
+  geom_col(position="dodge", width = 0.6) + 
+  scale_fill_tableau(palette = "Miller Stone", type = "regular") + 
+  labs(title="Model performance on predicting Legendary status", subtitle="Crossvalidated 1/5 split", fill="Predictive Model")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Submission 18. September 12:00. Peergrade.io (link + submission details will be sent out on Monday) 
+ 
+Please submit a PDF version of your notebook with a link to the corresponding colab notebook included. Please make sure(eg. own test in “anonymous” setting in your browser) that others can acess it. 
