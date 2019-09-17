@@ -2,17 +2,17 @@
 title: "M1 Assignment 2"
 author: "Lars Nielsen"
 date: "14/9/2019"
-output: 
-  html_document: 
-    theme: flatly
-    code_folding: hide
+output:
+  pdf_document:
     toc: yes
-    toc_float: 
-      collapsed: false
+  html_document:
+    code_folding: hide
+    theme: flatly
+    toc: yes
+    toc_float:
+      collapsed: no
 ---
-# SDS 2019: M1 Assignment 2 
- 
-*Description This time you will work with Pokemon data. No data munging needed. Just old-school ML.*
+*Description: This time you will work with Pokemon data. No data munging needed. Just old-school ML.*
 *Data You will find the dataset for this assignment under: https://github.com/SDS-AAU/M1-2019/raw/master/data/pokemon.csv*
  
 *It contains data on 800 Pokemon from the 1st to the 6th generation.*
@@ -28,39 +28,26 @@ library(ggridges)
 library(kableExtra)
 
 set.seed(15092019)
-
+time <- Sys.time()
 poke <- read_csv("https://github.com/SDS-AAU/M1-2019/raw/master/data/pokemon.csv")
 ```
 
-```{r theme, include=FALSE}
-bg <- "grey80"
+The original .Rmd file can be found on github https://github.com/LarsHernandez/SDS-Projects-2019/tree/master/M1_assignmen_2 and i recomend using the .html file instead of the pdf.
 
-th <- theme(plot.title        = element_text(size = 20),
-            plot.background   = element_rect(fill = bg, color = NA),
-            panel.background  = element_rect(fill = bg,       color = NA), 
-            legend.background = element_rect(fill = bg,       color = NA),
-            legend.key        = element_rect(fill = NA,       color = NA),
-            strip.background  = element_rect(fill = NA,       color = NA),
-            panel.border      = element_rect(fill = NA,       color = "grey20", size = 0.3),
-            panel.grid        = element_line(color = NA),
-            title             = element_text(color = "black"),
-            plot.subtitle     = element_text(color = "grey40"),
-            plot.caption      = element_text(color = "grey70"),
-            strip.text        = element_text(face  = "bold"),
-            axis.text         = element_text(color = "black"),
-            axis.ticks        = element_line(color = "black"),
-            plot.margin       = unit(c(0.2, 0.1, 0.2, 0.1), "cm"))
-```
-
+I load the data and do a first quick visualization of pokemons by generation to get a feeling for the data:
 
 ```{r info, fig.height=3, fig.width=10}
-poke %>% group_by(Generation, Legendary) %>% summarize(N=n()) %>% ggplot(aes(Generation, N, fill=Legendary)) + 
+poke %>% 
+  group_by(Generation, Legendary) %>% 
+  summarize(N=n()) %>% 
+  ggplot(aes(Generation, N, fill=Legendary)) + 
   geom_col(width = 0.6) + 
   scale_fill_tableau(palette = "Miller Stone", type = "regular") +
-  scale_x_continuous(breaks=c(1,2,3,4,5,6),trans = "reverse") + 
+  scale_x_continuous(breaks=c(1,2,3,4,5,6), trans = "reverse") + 
   scale_y_continuous(breaks=seq(0,160, by=20)) + 
   coord_flip() +
-  labs(title="Pokemons by generation and Legendary status", subtitle="800 Pokemons in total")
+  labs(title="Pokemons by generation and Legendary status", 
+       subtitle="800 Pokemons in total")
 ```
 
 ## 1. Unsupervised ML
@@ -68,9 +55,12 @@ poke %>% group_by(Generation, Legendary) %>% summarize(N=n()) %>% ggplot(aes(Gen
 ### A. PCA analysis
 *Execute a PCA analysis on all numerical variables in the dataset. Hint: Don't forget to scale them before. Use 4 components. What is the cumulative explained variance ratio?*
 
+I scale the data and use the build in `prcomp` function to calculate the prinicpal components and the eigenvalues
+
 ```{r pca}
 poke_scaled <- poke %>% 
-  select(HitPoints, Attack, Defense, SpecialAttack, SpecialDefense, Speed, Generation) %>% 
+  select(HitPoints, Attack, Defense, SpecialAttack, 
+         SpecialDefense, Speed, Generation) %>% 
   map_dfc(.f = scale)
 
 PCA <- prcomp(poke_scaled, rank. = 4)
@@ -81,7 +71,7 @@ summary(PCA)
 paste0("The cumulative explained variance ratio is ", round(summary(PCA)$importance[3,4]*100,2),"%")
 ```
 
-
+I also print the top loading variables for each factor to show what variation is contained within the principle components:
 
 ```{r pca3}
 loadings <- PCA$rotation %>% 
@@ -103,6 +93,7 @@ kable(cbind(a,b,c,d)) %>% kable_styling(bootstrap_options = c("striped", "conden
 ### B. Clustering
 *Perform a cluster analysis (either k-means or hierarchical clustering algorithm) on all numerical variables (scaled & before PCA). Apply the elbow method to determine a “pragmatic” number of clusters.*
 
+I use the kmeans algorithm to cluster the data, and i calculate the scree plot by running it through an for-loop with values from 1 to 15
 
 ```{r clustering, fig.height=3, fig.width=9}
 wss <- 0
@@ -120,6 +111,8 @@ ggplot(scree, aes(N, wss)) +
 
 ```
 
+From this plot i find no conclusive elbow point, but conclude that 4 clusters seems approapiate, i plot the variables with the clusters in a matrix plot, and see that for a good deal of the variables there is a nice seperation, for example notice how defense in cluster 3 is seperated (most with high defense end in cluster 3), or cluster 1 in attack (where most with low attack ends up in cluster 1). This is usefull later.
+
 ```{r clustering2, fig.height=8, fig.width=10}
 
 km <- poke_scaled %>% 
@@ -127,7 +120,10 @@ km <- poke_scaled %>%
 
 poke_scaled$cluster <- as.factor(km$cluster)
 
-ex <- km$centers %>% as_tibble %>% mutate(N=1:4) %>% gather(variable, value, -N)
+ex <- km$centers %>% 
+  as_tibble %>% 
+  mutate(N=1:4) %>% 
+  gather(variable, value, -N)
 
 ggplot(poke_scaled, aes(x = .panel_x, y = .panel_y, colour = cluster, fill = cluster)) + 
   geom_point(alpha = 0.5, position = 'auto') + 
@@ -145,13 +141,15 @@ ggplot(poke_scaled, aes(x = .panel_x, y = .panel_y, colour = cluster, fill = clu
 
 ### C. Visualization
 *Visualize the first 2 principal components and color the datapoints by cluster.* 
-```{r clustering3, fig.height=3, fig.width=10}
 
+We see how the clusters also has seperated the factors from PCA nicely
+
+```{r clustering3, fig.height=3, fig.width=10}
 df <- tibble(PC1 = PCA$x[,1], PC2 = PCA$x[,2], cluster=as.factor(km$cluster))
 
-
 ggplot(df, aes(PC1, PC2, col = cluster)) + 
-  geom_point(data=df %>% select(-cluster), aes(PC1, PC2), inherit.aes = F, color="grey75", alpha=0.2, size=2) +
+  geom_point(data=df %>% select(-cluster), aes(PC1, PC2), 
+             inherit.aes = F, color="grey75", alpha=0.2, size=2) +
   geom_point(alpha=0.5, size=2) + 
   scale_color_tableau(palette = "Miller Stone", type = "regular") + 
   facet_wrap(~cluster, nrow=1) + 
@@ -161,29 +159,33 @@ ggplot(df, aes(PC1, PC2, col = cluster)) +
 
 
 
-
 ### D. Inspection
 *Inspect the distribution of the variable “Type1” across clusters. Does the algorithm separate the different types of pokemon?*
 
+From the two plots below we see that `rock` and `steel` fall primarliy in cluster 3, which as we saw before contained observations high in defense, also we see that cluster 1, that contained low attack, takes alot of `fairy` and `poison` but almost no `dragon`. This also makes sense as i presume that dragons have higher attack than faries. But in general the clusters are not that good at seperating the types.
+
 ```{r clustering4, fig.height=5, fig.width=10}
-
-poke_scaled %>% mutate(Type1 = poke$Type1, 
-                       cluster = as.factor(km$cluster)) %>% 
+poke_scaled %>% 
+  mutate(Type1 = poke$Type1, 
+         cluster = as.factor(km$cluster)) %>% 
   group_by(Type1, cluster) %>% 
   summarize(N=n()) %>% 
-  ggplot(aes(Type1, N, fill=cluster)) + geom_col(position = position_dodge2(width = 0.9, preserve = "single")) + 
+  ggplot(aes(Type1, N, fill=cluster)) + 
+  geom_col(position = position_dodge2(width = 0.9, preserve = "single")) + 
   scale_fill_tableau(palette = "Miller Stone", type = "regular") +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
-  labs(title="Type of pokemon within each cluster")
+  labs(title="Number of pokemons within each type by cluster")
 
-poke_scaled %>% mutate(Type1 = poke$Type1, 
-                       cluster = as.factor(km$cluster)) %>% 
+poke_scaled %>% 
+  mutate(Type1 = poke$Type1, 
+         cluster = as.factor(km$cluster)) %>% 
   group_by(Type1, cluster) %>% 
   summarize(N=n()) %>% 
-  ggplot(aes(Type1, N, fill=cluster)) + geom_col(position = "fill") + 
+  ggplot(aes(Type1, N, fill=cluster)) + 
+  geom_col(position = "fill") + 
   scale_fill_tableau(palette = "Miller Stone", type = "regular") +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
-  labs(title="Type of pokemon within each cluster", y="%")
+  labs(title="Percentage of pokemons within each type by cluster", y="%")
 ```
 
 
@@ -201,13 +203,18 @@ poke_scaled %>% mutate(Type1 = poke$Type1,
 
 ### A. Preprocessing 
 *Perform necessary ML preprocessing of your data if deemed necessary.* 
+
+I select the relevant variables and scale them, as this is important to some of my models, especially the regularized logistic regression. Also i print the distribution of the variables by legendary status with the `ggridges` package, and i see a nice pattern that my models should be able to work with.
+
 ```{r preprocessing, fig.height=5, fig.width=10, message=FALSE, warning=FALSE}
 poke_ml <- poke %>% 
-  select(HitPoints, Attack, Defense, SpecialAttack, SpecialDefense, Speed, Generation, Legendary) %>% 
+  select(HitPoints, Attack, Defense, SpecialAttack, SpecialDefense, 
+         Speed, Generation, Legendary) %>% 
   map_dfc(.f = scale) %>% 
   mutate(Legendary = as.factor(poke$Legendary))
 
-kable(head(poke_ml),digits = 2) %>% kable_styling(bootstrap_options = c("striped", "condensed"))
+kable(head(poke_ml),digits = 2) %>% 
+  kable_styling()
 
 poke_ml %>%
   gather(variable, value, -Legendary) %>%
@@ -216,41 +223,40 @@ poke_ml %>%
              x = percent_rank(value)) ) +
   scale_fill_tableau(palette = "Miller Stone", type = "regular") +
   geom_density_ridges(alpha = 0.85) + 
-  labs(title = "Distribution of different variables", subtitle = "for legendary and non-legendary",
-       fill="Legendary", y="Feature", x="Distribution") + theme(axis.title.y = element_blank())
+  labs(title = "Distribution of different variables", 
+       subtitle = "for legendary and non-legendary",
+       fill="Legendary", y="Feature", x="Distribution") + 
+  theme(axis.title.y = element_blank())
 ```
 
 
 ### B. Split 
 *Split the data in a training (75%) and test (25%) dataset.*
-```{r split}
 
+```{r split}
 index    <- createDataPartition(poke_ml$Legendary, p = 0.75, list = FALSE)
 training <- poke_ml[index,] 
 test     <- poke_ml[-index,] 
 
-paste0("The training set has ", dim(training)[1], " And the test set has ", dim(test)[1], " observations")
+paste0("The training set has ", dim(training)[1], 
+       " And the test set has ", dim(test)[1], " observations")
 ```
 
 
 
 ### C. Cross-validation
 *Define a n-fold cross-validation workflow for your model testing.*
+
+The cross validation is 5-fold
+
 ```{r partitioning}
 cv <- trainControl(method = "cv", number = 5)
 ```
 
 
 
-
-
-
 ### D. Models
-*Fit three separate models on your training data, where you predict the “legendary” variable. Use a: *
-
-1. Logistic regression
-2. Decision tree, and
-3. another algorithm of choice
+*Fit three separate models on your training data, where you predict the “legendary” variable. Use a: 1. Logistic regression, 2. Decision tree, and 3. another algorithm of choice*
   
 I fit 5 different models: 
 
@@ -259,6 +265,8 @@ I fit 5 different models:
 - Random Forrest
 - Support Vector Machine Model
 - Linear Diskriminant Analysis Model
+
+and i tune the parametres to get the highest accuracy. To be able to compare i also do a random assignment based of the probarbility of legendary in the training set.
   
 ```{r Models}
 fit_log <- train(Legendary ~ .,
@@ -305,6 +313,9 @@ fit_lda <- train(Legendary ~ .,
 
 ### E. Prediction
 *Use the fitted models to predict the “legendary” variable in your test data.*
+
+I predict the legendary status and print the confusion matrices
+
 ```{r predictions}
 pred_log <- predict(fit_log,  test)
 conf_log <- table(pred_log, test$Legendary)
@@ -322,13 +333,20 @@ pred_lda <- predict(fit_lda,  test)
 conf_lda <- table(pred_lda, test$Legendary)
 
 
+random <- rbinom(n    = length(test$Legendary), size = 1, 
+                 prob = mean(as.logical(training$Legendary)))
+conf_ran <- table(as.factor(if_else(random==1, "TRUE", "FALSE")), test$Legendary)
+ 
 
-kable(cbind(conf_glm, conf_log, conf_svm, conf_raf, conf_lda)) %>% 
-  kable_styling("bordered", "condensed") %>%
+kable(cbind(conf_glm, conf_log, conf_svm, conf_raf, conf_lda, conf_ran)) %>% 
+  kable_styling() %>%
   column_spec(1, bold = T, color="black") %>%
-  add_header_above(c(" "=1, "Elastic Net\nRegression" = 2, "Logistic\nRegression" = 2, 
-                     "Support Vector\nMachines" = 2, "Random\nForrest" = 2, 
-                     "Linear Diskriminant\nAnalysis" = 2))
+  add_header_above(c(" "=1, "Elastic Net\nRegression" = 2, 
+                     "Logistic\nRegression" = 2, 
+                     "Support Vector\nMachines" = 2, 
+                     "Random\nForrest" = 2, 
+                     "Linear Diskriminant\nAnalysis" = 2,
+                     "Random\nAssignment" = 2))
 
 
 ```
@@ -339,27 +357,47 @@ kable(cbind(conf_glm, conf_log, conf_svm, conf_raf, conf_lda)) %>%
 ### F. Evaluation
 *Evaluate the performance of these 3 models by comparing the predicted and the true values of “legendary” in the test data. To do so, also create a confusion matrix.*
 
+I Evaluate performance by accuracy, precision and specificity:
+
 ```{r results, fig.height=5, fig.width=10}
 log <- rbind(spec(conf_log), precision(conf_log), accuracy(conf_log))
 raf <- rbind(spec(conf_raf), precision(conf_raf), accuracy(conf_raf))
 glm <- rbind(spec(conf_glm), precision(conf_glm), accuracy(conf_glm))
 svm <- rbind(spec(conf_svm), precision(conf_svm), accuracy(conf_svm))
 lda <- rbind(spec(conf_lda), precision(conf_lda), accuracy(conf_lda))
-
+ran <- rbind(spec(conf_ran), precision(conf_ran), accuracy(conf_ran))
 
 log$model <- "Logistic Regression"
 raf$model <- "Random Forrest"
 glm$model <- "Elastic Net Regression"
 svm$model <- "Support Vector Machines"
 lda$model <- "Linear Discriminant Analysis"
+ran$model <- "Random Assignment"
 
-
-df <- rbind(log, raf, glm, svm, lda)
+df <- rbind(log, raf, glm, svm, lda, ran)
 
 ggplot(df, aes(.metric, .estimate, fill = reorder(model, desc(.estimate)))) + 
   geom_col(position="dodge", width = 0.6) + 
   scale_fill_tableau(palette = "Miller Stone", type = "regular") + 
-  labs(title="Model performance on predicting Legendary status", subtitle="Crossvalidated 1/5 split", fill="Predictive Model")
+  labs(title="Model performance on predicting Legendary status", 
+       subtitle="Crossvalidated 1/5 split", fill="Predictive Model")
+```
+
+I conclude that the ML models improve the prediction of Legendary status, but as the simple logistic regression performs well there is in reality no need for the black box ML algorithms. This makes sense as the data generating process is just japanese writers comming up with some values, and the legendary are assigned higher. Therefore it makes sense that this relationship can be captured by the logistic regression, and that any better performance of other models will be overfitting.
+
+Below here i print the coeffecients from the basic logistic regression, and we see how Legendary pokemons are higher in all specs, especially speed.
+
+```{r}
+model <- glm(Legendary ~ ., 
+             family = binomial(link='logit'), 
+             data = training)
+summary(model)
+```
+
+
+
+```{r}
+paste0("Time to knit document: ", round(difftime(Sys.time(), time,units = "mins")), " minut(s)")
 ```
 
 
@@ -373,12 +411,7 @@ ggplot(df, aes(.metric, .estimate, fill = reorder(model, desc(.estimate)))) +
 
 
 
-
-
-
-
-Submission 18. September 12:00. Peergrade.io (link + submission details will be sent out on Monday) 
- 
-Please submit a PDF version of your notebook with a link to the corresponding colab notebook included. Please make sure(eg. own test in “anonymous” setting in your browser) that others can acess it. 
+*Submission 18. September 12:00. Peergrade.io (link + submission details will be sent out on Monday)*
+*Please submit a PDF version of your notebook with a link to the corresponding colab notebook included. Please make sure(eg. own test in “anonymous” setting in your browser) that others can acess it.*
 
 
