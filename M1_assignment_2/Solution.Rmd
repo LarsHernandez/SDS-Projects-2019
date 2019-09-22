@@ -87,7 +87,8 @@ b <- loadings %>% dplyr::select(name, PC2) %>% arrange(desc(PC2))
 c <- loadings %>% dplyr::select(name, PC3) %>% arrange(desc(PC3))
 d <- loadings %>% dplyr::select(name, PC4) %>% arrange(desc(PC4))
 
-kable(cbind(a,b,c,d)) %>% kable_styling(bootstrap_options = c("striped", "condensed"))
+kable(cbind(a,b,c,d)) %>% kable_styling()
+#kable_styling(bootstrap_options = c("striped", "condensed"))
 ```
 
 ### B. Clustering
@@ -215,6 +216,7 @@ poke_ml <- poke %>%
 
 kable(head(poke_ml),digits = 2) %>% 
   kable_styling()
+# kable_styling(bootstrap_options = c("striped", "condensed"))
 
 poke_ml %>%
   gather(variable, value, -Legendary) %>%
@@ -347,7 +349,7 @@ kable(cbind(conf_glm, conf_log, conf_svm, conf_raf, conf_lda, conf_ran)) %>%
                      "Random\nForrest" = 2, 
                      "Linear Diskriminant\nAnalysis" = 2,
                      "Random\nAssignment" = 2))
-
+#kable_styling(bootstrap_options = c("bordered", "condensed"))
 
 ```
 
