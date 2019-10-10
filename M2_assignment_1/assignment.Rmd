@@ -1,0 +1,620 @@
+---
+title: "M2 Assignment 1"
+author: "Lars Nielsen"
+date: "08/10/2019"
+output:
+  html_document:
+    code_folding: hide
+    theme: flatly
+    toc: yes
+    toc_float:
+      collapsed: no
+---
+# Introduction
+
+In your first assignment in M2, you will replicate a well known network analysis, with different data and some twists. The data is to be found [HERE](https://github.com/SDS-AAU/M2-2019/tree/master/notebooks/assignments/assignment_1/data)
+
+## Background
+Let the fun begin. You will analyze network datacollected from the managers of a high-tec company. This dataset, originating from the paper below, is widely used in research on organizational networks. Time to give it a shot as well.
+
+[Krackhardt D. (1987). Cognitive social structures. Social Networks, 9, 104-134.](https://www.andrew.cmu.edu/user/krack/documents/pubs/1987/1987%20Cognitive%20Social%20Structures.pdf)
+
+The company manufactured high-tech equipment on the west coast of the United States and had just over 100 employees with 21 managers. Each manager was asked to whom do you go to for advice and who is your friend, to whom do you report was taken from company documents. 
+
+## Description
+The dataset includes 4 files - 3xKrack-High-Tec and 1x High-Tec-Attributes.
+
+**Krack-High-Tec** includes the following three 21x21 text matrices: 
+
+* ADVICE non-symmetric, binary
+* FRIENDSHIP non-symmetric, binary
+* REPORTS_TO non-symmetric, binary
+
+Column 1 contains the ID of the **ego** (from wehere the edge starts), and column 3 the **alter** (to which the edge goes). Column 3 indicates the presence (=1) or absence (=0) of an edge.
+
+**High-Tec-Attributes** includes one 21x4 valued matrix.
+
+* ID: Numeric ID of the manager
+* AGE: The managers age (in years)
+* TENURE:	The length of service or tenure (in years)
+* LEVEL: The level in the corporate hierarchy (coded 1,2 and 3; 1 = CEO, 2 = Vice President, 3 = manager)
+* DEPT: The department (coded 1,2,3,4 with the CEO in department 0, ie not in a department)
+
+
+```{r include=FALSE}
+library(data.table)
+library(tidyverse)
+library(tidygraph)
+library(ggraph)
+library(gridExtra)
+library(igraph)
+library(gganimate)
+library(stargazer)
+library(kableExtra)
+library(knitr)
+
+th <- theme(plot.title        = element_text(                  size = 12),
+            plot.background   = element_rect(fill = "white", color = NA),
+            plot.margin       = unit(c(0.5, 0.5, 0.5, 0.5), "cm"),
+            panel.grid        = element_line(                 color = NA),
+            panel.background  = element_rect(fill = "grey95", color = NA), 
+            panel.border      = element_rect(fill = NA,       color = NA),
+            strip.background  = element_rect(fill = NA,       color = NA),
+            strip.text        = element_text(face  = "bold"),
+            title             = element_text(color = "black"),
+            axis.ticks        = element_line(color = "grey"),
+            axis.text         = element_text(color = "grey",   size = 7),
+            legend.text       = element_text(color = "black",  size = 10),
+            legend.background = element_rect(fill = "white", color = NA),
+            legend.key        = element_rect(fill = NA,       color = NA))
+```
+
+
+
+
+
+# Questions
+
+## 1. Create a network
+
+* Generate network objects for the companies organizational structure (reports to), friendship, advice
+* This networks are generated from the corresponding edgelists
+* Also attach node characteristics from the corresponding nodelist
+
+```{r}
+atb <- fread("https://raw.githubusercontent.com/SDS-AAU/M2-2019/master/notebooks/assignments/assignment_1/data/Krack-High-Tec-Attributes.csv")
+adv <- fread("https://raw.githubusercontent.com/SDS-AAU/M2-2019/master/notebooks/assignments/assignment_1/data/Krack-High-Tec-edgelist-Advice.txt")
+fri <- fread("https://raw.githubusercontent.com/SDS-AAU/M2-2019/master/notebooks/assignments/assignment_1/data/Krack-High-Tec-edgelist-Friendship.txt")
+rep <- fread("https://raw.githubusercontent.com/SDS-AAU/M2-2019/master/notebooks/assignments/assignment_1/data/Krack-High-Tec-edgelist-ReportsTo.txt")
+```
+
+I create the three networks with the attributes, and i display a printout of the first network below: 
+
+```{r}
+adv_n <- tbl_graph(nodes=atb, edges=adv) %E>% filter(V3 == 1) 
+fri_n <- tbl_graph(nodes=atb, edges=fri) %E>% filter(V3 == 1) 
+rep_n <- tbl_graph(nodes=atb, edges=rep) %E>% filter(V3 == 1) 
+
+adv_n
+#summary(adv_n)
+#summary(fri_n)
+#summary(rep_n)
+```
+
+
+
+
+## 2. Analysis
+
+### A: Network level characteristics
+Find the overal network level of:
+
+* Density
+* Transistivity (Clustering Coefficient)
+* Reciprocity
+
+For the different networks. Describe and interpret the results. Answer the following questions: 
+
+* Are relationships like friendship and advice giving usually reciprocal? 
+  
+  **yes as can be seen on the graph below they are very close, which means that the relationships are two way. ReportTo doesn't have a score, this makes sense as it by design is a one way relationship**
+  
+* Are friends of your friends also your friends?
+  
+  **Maybe, but transitivity, is lower for friendship than advice, this means that people seem to cluster more in advice than in friendship. This could make sense if there many specialised areas within the company, so who you ask advice from is a small cluster that asks from eachother, where friendships are less clustered**
+
+* Are the employees generally more likely to be in a friendship or advice-seeking relationship?
+  
+  **As can be seen from the density then they are more likely to be in an advice seeking relationship, and the lowest is ReportsTo which again makes sense**
+
+```{r fig.height=3, fig.width=10}
+network <- c("Advice", "Friendship", "ReportsTo")
+
+densities      <- c(edge_density(adv_n), edge_density(fri_n), edge_density(rep_n))
+transitivities <- c(transitivity(adv_n), transitivity(fri_n), transitivity(rep_n))
+reciprocities  <- c(reciprocity(adv_n),  reciprocity(fri_n),  reciprocity(rep_n))
+
+df <- data.frame(network, densities, transitivities, reciprocities)
+
+df %>% gather(variable, value, -network) %>% 
+ggplot(aes(network, value, fill = network)) + 
+  geom_col(position="dodge", width=0.9) + 
+  scale_fill_brewer(palette="Paired") +
+  geom_text(aes(label=round(value,2), y=value+0.05), size=3.5) +
+  labs(title="Network level characteristics", x="", y="") + th + facet_wrap(~variable)
+```
+
+
+
+
+
+### B: Node level characteristics
+Likewise, find out:
+
+* Who is most popular in the networks. Who is the most wanted friend, and advice giver? 
+
+  **At first this seems simple, we just count the total connections and get the top, and we see that in friendship ID 17 leads with 24 connections.. but wait. we have to remember that the network is directed. if we seperate the directions we see that ID 17 has noted 18 people as friends, well that's a bit embarasing as he/she only has 6 in return. If we only look at incomming we see that ID 2, 1 and 12 are in the lead. So the most wanted friend is 2, and the most wanted advice giver is also 2**
+
+
+```{r}
+a1 <- fri_n %N>%  mutate(CON = degree(fri_n, mode = "total")) %>% as_tibble %>% arrange(desc(CON)) %>% head(5)
+a2 <- adv_n %N>%  mutate(CON = degree(adv_n, mode = "total")) %>% as_tibble %>% arrange(desc(CON)) %>% head(5)
+a3 <- rep_n %N>%  mutate(CON = degree(rep_n, mode = "total")) %>% as_tibble %>% arrange(desc(CON)) %>% head(5)
+
+kable(cbind(a1,a2,a3)) %>% 
+  kable_styling(c("condensed", "bordered", "striped")) %>% 
+  add_header_above(c("Friendship" = 6, "Advice" = 6, "ReportTo" = 6)) %>% 
+  add_header_above(c("Total connections"=18)) %>%
+  column_spec(c(6,12,18), bold = T, color = "white", background = "#a6cee3")
+```
+
+
+```{r}
+a1 <- fri_n %N>%  mutate(CON = degree(fri_n, mode = "in")) %>% as_tibble %>% arrange(desc(CON)) %>% head(5)
+a2 <- adv_n %N>%  mutate(CON = degree(adv_n, mode = "in")) %>% as_tibble %>% arrange(desc(CON)) %>% head(5)
+a3 <- rep_n %N>%  mutate(CON = degree(rep_n, mode = "in")) %>% as_tibble %>% arrange(desc(CON)) %>% head(5)
+
+kable(cbind(a1,a2,a3)) %>% 
+  kable_styling(c("condensed", "bordered", "striped")) %>% 
+  add_header_above(c("Friendship" = 6, "Advice" = 6, "ReportTo" = 6)) %>% 
+  add_header_above(c("Incomming connections"=18)) %>%
+  column_spec(c(6,12,18), bold = T, color = "white", background = "#a6cee3")
+
+```
+
+
+* Are managers in higher hirarchy more popular as friend, and advice giver?
+
+  **We can see that the CEO is more put as advice connection not as much as friend. In a corporate setting this makes sense. Most who get incomming friend connections are VP's and then managers**
+
+```{r fig.height=3, fig.width=10}
+a1 <- fri_n %N>%  mutate(CON = degree(fri_n, mode = "in")) %>% as_tibble %>% arrange(desc(CON))
+a2 <- adv_n %N>%  mutate(CON = degree(adv_n, mode = "in")) %>% as_tibble %>% arrange(desc(CON))
+a3 <- rep_n %N>%  mutate(CON = degree(rep_n, mode = "in")) %>% as_tibble %>% arrange(desc(CON))
+
+
+f1 <- a1 %>% group_by(LEVEL) %>% summarize(Friendship = mean(CON))
+f2 <- a2 %>% group_by(LEVEL) %>% summarize(Advice = mean(CON))
+f3 <- a3 %>% group_by(LEVEL) %>% summarize(ReportTo = mean(CON))
+
+f1 %>% 
+  left_join(f2,by="LEVEL") %>% 
+  left_join(f3, by="LEVEL") %>% 
+  gather(variable, value, -LEVEL) %>% 
+  ggplot(aes(LEVEL,value, fill=as.factor(variable))) + 
+  geom_col(show.legend = F) + 
+  facet_wrap(~variable, scale="free") +
+  scale_fill_brewer(palette="Paired") + 
+  labs(title="Mean incomming connections by network and Level", subtitle="1 = CEO, 2 = VP, 3 = Manager") +
+  th
+```
+
+
+
+
+### C: Relational Characteristics
+
+Answer the following questions:
+
+* Are managers from the same 1. department, or on the same 2. hirarchy, 3. age, or 4. tenuere more likely to become friends or give advice? (hint: assortiativity related) 
+
+* Are friends more likely to give each others advice?
+
+
+```{r fig.height=4, fig.width=10}
+r <- c("value", "type", "network")
+r1 <- c(assortativity(fri_n, V(fri_n)$DEPT, directed = TRUE),               "DEPT",   "Friendship")
+r2 <- c(assortativity(fri_n, V(fri_n)$LEVEL, directed = TRUE),              "LEVEL",  "Friendship")
+r3 <- c(assortativity(fri_n, V(fri_n)$AGE, directed = TRUE),                "AGE",    "Friendship")
+r4 <- c(assortativity(fri_n, V(fri_n)$TENURE, directed = TRUE),             "TENURE", "Friendship")
+r5 <- c(assortativity(fri_n, degree(fri_n, mode = "in"), directed = TRUE),  "POP",    "Friendship")
+
+
+r6 <- c(assortativity(adv_n, V(adv_n)$DEPT, directed = TRUE),               "DEPT",   "Advice")
+r7 <- c(assortativity(adv_n, V(adv_n)$LEVEL, directed = TRUE),              "LEVEL",  "Advice")
+r8 <- c(assortativity(adv_n, V(adv_n)$AGE, directed = TRUE),                "AGE",    "Advice")
+r9 <- c(assortativity(adv_n, V(adv_n)$TENURE, directed = TRUE),             "TENURE", "Advice")
+r10 <- c(assortativity(adv_n, degree(adv_n, mode = "in"), directed = TRUE),  "POP",   "Advice")
+
+
+df <- as.data.frame(rbind(r1,r2,r3,r4,r5,r6,r7,r8,r9,r10))
+names(df) <- r
+df$value <- as.numeric(df$value)
+
+ggplot(df, aes(network, value, fill=network)) + geom_col() + 
+  facet_wrap(~type, nrow=1) + 
+  scale_fill_brewer(palette="Paired") + 
+  th
+
+```
+
+
+
+
+
+
+## 3. Aggregated Networks
+
+Reconstruct the advice and friendship network on the aggregated level of departments, where nodes represent departments and edges the number of cross departmental friendships/advice relationships.
+
+```{r}
+atb_dep <- atb %>% group_by(DEPT) %>% summarize(ID=mean(ID),AGE = mean(AGE))
+
+atb_g <- unique(atb$DEPT)
+ss <- atb %>% select(ID, DEPT)
+fri_g <- fri %>% 
+  left_join(ss, by=c("V1"="ID")) %>% 
+  left_join(ss, by=c("V2"="ID")) %>% 
+  filter(V3 == 1) %>% 
+  group_by(DEPT.x, DEPT.y) %>% 
+  summarize(n=n()) %>% 
+  rename(from = DEPT.x,
+         to   = DEPT.y) %>% 
+  ungroup() %>% 
+  mutate(from = from+1,
+         to = to +1)
+
+atb_g <- data.frame(ID=atb_g + 1)
+
+fri_grp <- tbl_graph(nodes=as.data.frame(atb_dep), edges=fri_g)
+fri_grp
+fri_grp %>% 
+  ggraph(layout = "nicely") + 
+  geom_edge_link(aes(width=n)) + 
+  geom_node_point(size=15, color="#1f78b4") + 
+  scale_color_continuous(guide = "legend") + 
+  scale_size(range=c(5,12)) +
+  geom_node_text(aes(label = DEPT),size=4, repel = F, color="white")
+
+
+
+
+atb_g <- unique(atb$DEPT)
+ss <- atb %>% select(ID, DEPT)
+adv_g <- adv %>% 
+  left_join(ss, by=c("V1"="ID")) %>% 
+  left_join(ss, by=c("V2"="ID")) %>% 
+  filter(V3 == 1) %>% 
+  group_by(DEPT.x, DEPT.y) %>% 
+  summarize(n=n()) %>% 
+  rename(from = DEPT.x,
+         to   = DEPT.y) %>% 
+  ungroup() %>% 
+  mutate(from = from+1,
+         to = to +1)
+
+atb_g <- data.frame(ID=atb_g + 1)
+
+adv_grp <- tbl_graph(nodes=as.data.frame(atb_dep), edges=adv_g)
+adv_grp
+adv_grp %>% 
+  ggraph(layout = "nicely") + 
+  geom_edge_link(aes(width=n)) + 
+  geom_node_point(size=15, color="#1f78b4") + 
+  scale_color_continuous(guide = "legend") + 
+  scale_size(range=c(5,12)) +
+  geom_node_text(aes(label = DEPT),size=4, repel = F, color="white")
+
+                    
+#adv_dep
+
+#adv_n <- tbl_graph(nodes=atb_dep, edges=adv) %E>% filter(V3 == 1) 
+#fri_n <- tbl_graph(nodes=atb_dep, edges=fri) %E>% filter(V3 == 1) 
+
+
+
+#adv_n %N>% group_by(DEPT) %>% summarize(ID = 1:5) 
+
+
+ 
+  #ggraph(layout = "nicely") + 
+  #  geom_edge_link(alpha=0.4) + 
+  #  geom_node_point(aes(color=as.factor(DEPT)), size = 4, alpha=0.8) +
+  #  scale_color_brewer(palette="GnBu")
+```
+
+
+
+
+## 4. Visualization
+
+Everything goes. Show us some pretty and informative plots. Choose what to plot, and how, on your own. Interpret the results and share some insights.
+
+### Layout {.tabset .tabset-fade .tabset-pills}
+Click on the buttons below to see the different layouts of the three networks
+
+#### Advice
+
+```{r fig.height=6, fig.width=10}
+layouts <- c("circle","nicely","dh","gem","graphopt","grid","mds","sphere","randomly","kk","drl","lgl")
+
+adv_pp <- list()
+
+for (layout in layouts) {
+  adv_pp[[layout]] <- ggraph(adv_n, layout = layout) +
+     geom_edge_link(alpha=0.4) + 
+     geom_node_point(aes(color=as.factor(DEPT)),size = 4, alpha=0.8, show.legend = F) +
+    scale_color_brewer(palette="GnBu") +
+    labs(title=layout) + 
+    th
+}
+adv_pp$nrow <- 3
+do.call(grid.arrange, adv_pp)
+
+```
+
+#### Friendship
+
+```{r fig.height=6, fig.width=10}
+
+fri_pp <- list()
+
+for (layout in layouts) {
+  fri_pp[[layout]] <- ggraph(fri_n, layout = layout) +
+     geom_edge_link(alpha=0.4) + 
+     geom_node_point(aes(color=as.factor(DEPT)),size = 4, alpha=0.8, show.legend = F) +
+    scale_color_brewer(palette="GnBu") +
+    labs(title=layout) + 
+    th
+}
+
+fri_pp$nrow <- 3
+do.call(grid.arrange, fri_pp)
+
+```
+
+#### ReportTo
+
+```{r fig.height=6, fig.width=10}
+
+rep_pp <- list()
+
+for (layout in layouts) {
+  rep_pp[[layout]] <- ggraph(rep_n, layout = layout) +
+     geom_edge_link(alpha=0.4) + 
+     geom_node_point(aes(color=as.factor(DEPT)),size = 4, alpha=0.8, show.legend = F) +
+    scale_color_brewer(palette="GnBu") +
+    labs(title=layout) +
+    th
+}
+
+rep_pp$nrow <- 3
+do.call(grid.arrange, rep_pp)
+
+```
+
+
+
+### Centrality {.tabset .tabset-fade .tabset-pills}
+
+The last excercise in layout showed me that when there is many connections, as with advice and friendship the layout is mostly just confusing, but when there are more clusters and less connections between them layout is important.. Because i'm primarily interested in the friendship in this next one i go on with the circle layout as that gives a nice structured view
+
+#### Friendship
+
+```{r fig.height=5, fig.width=12, message=FALSE, warning=FALSE}
+set.seed(09102019)
+
+a <- fri_n %N>% mutate(centrality_dgr = centrality_degree(mode="in")) %>% 
+  ggraph(layout = "circle") + 
+  geom_edge_link() + 
+  geom_node_point(aes(size = centrality_dgr, color = centrality_dgr)) + 
+  scale_color_continuous(guide = "legend") + 
+  scale_size(range=c(5,12)) +
+  geom_node_text(aes(label = ID),size=4, repel = F, color="white") +
+  labs(title="centrality degree", color="", size="") +
+  th + theme(legend.position = "top", plot.title = element_text(size=16))
+
+b <- fri_n %N>% mutate(centrality_eigen = centrality_eigen(directed = T)) %>% 
+  ggraph(layout = "circle") + 
+  geom_edge_link() + 
+  geom_node_point(aes(size = centrality_eigen, color = centrality_eigen)) + 
+  scale_color_continuous(guide = "legend") + 
+  scale_size(range=c(5,12)) +
+  geom_node_text(aes(label = ID),size=4, repel = F, color="white") +
+    labs(title="centrality eigen", color="", size="") +
+  th + theme(legend.position = "top", plot.title = element_text(size=16))
+
+c <- fri_n %N>% mutate(centrality_betweenness = centrality_betweenness(directed = T)) %>% 
+  ggraph(layout = "circle") + 
+  geom_edge_link() + 
+  geom_node_point(aes(size = centrality_betweenness, color = centrality_betweenness)) +
+  scale_color_continuous(guide = "legend") +
+  scale_size(range=c(5,12)) +
+  geom_node_text(aes(label = ID),size=4, repel = F, color="white") +
+    labs(title="centrality betweenness", color="", size="") +
+  th + theme(legend.position = "top", plot.title = element_text(size=16))
+
+grid.arrange(a,b,c, nrow=1)
+```
+
+#### ReportTO
+
+```{r fig.height=5, fig.width=12, message=FALSE, warning=FALSE}
+a <- rep_n %N>% mutate(centrality_dgr = centrality_degree(mode="in")) %>% 
+  ggraph(layout = "circle") + 
+  geom_edge_link() + 
+  geom_node_point(aes(size = centrality_dgr, color = centrality_dgr)) + 
+  scale_color_continuous(guide = "legend") + 
+  scale_size(range=c(5,12)) +
+  geom_node_text(aes(label = ID),size=4, repel = F, color="white") +
+  labs(title="centrality degree", color="", size="") +
+  th + theme(legend.position = "top", plot.title = element_text(size=16))
+
+b <- rep_n %N>% mutate(centrality_eigen = centrality_eigen(directed = T)) %>% 
+  ggraph(layout = "circle") + 
+  geom_edge_link() + 
+  geom_node_point(aes(size = centrality_eigen, color = centrality_eigen)) + 
+  scale_color_continuous(guide = "legend") + 
+  scale_size(range=c(5,12)) +
+  geom_node_text(aes(label = ID),size=4, repel = F, color="white") +
+    labs(title="centrality eigen", color="", size="") +
+  th + theme(legend.position = "top", plot.title = element_text(size=16))
+
+c <- rep_n %N>% mutate(centrality_betweenness = centrality_betweenness(directed = T)) %>% 
+  ggraph(layout = "circle") + 
+  geom_edge_link() + 
+  geom_node_point(aes(size = centrality_betweenness, color = centrality_betweenness)) +
+  scale_color_continuous(guide = "legend") +
+  scale_size(range=c(5,12)) +
+  geom_node_text(aes(label = ID),size=4, repel = F, color="white") +
+    labs(title="centrality betweenness", color="", size="") +
+  th + theme(legend.position = "top", plot.title = element_text(size=16))
+
+grid.arrange(a,b,c, nrow=1)
+```
+
+#### Advice
+
+```{r fig.height=5, fig.width=12, message=FALSE, warning=FALSE}
+set.seed(09102019)
+
+a <- adv_n %N>% mutate(centrality_dgr = centrality_degree(mode="in")) %>% 
+  ggraph(layout = "circle") + 
+  geom_edge_link() + 
+  geom_node_point(aes(size = centrality_dgr, color = centrality_dgr)) + 
+  scale_color_continuous(guide = "legend") + 
+  scale_size(range=c(5,12)) +
+  geom_node_text(aes(label = ID),size=4, repel = F, color="white") +
+  labs(title="centrality degree", color="", size="") +
+  th + theme(legend.position = "top", plot.title = element_text(size=16))
+
+b <- adv_n %N>% mutate(centrality_eigen = centrality_eigen(directed = T)) %>% 
+  ggraph(layout = "circle") + 
+  geom_edge_link() + 
+  geom_node_point(aes(size = centrality_eigen, color = centrality_eigen)) + 
+  scale_color_continuous(guide = "legend") + 
+  scale_size(range=c(5,12)) +
+  geom_node_text(aes(label = ID),size=4, repel = F, color="white") +
+    labs(title="centrality eigen", color="", size="") +
+  th + theme(legend.position = "top", plot.title = element_text(size=16))
+
+c <- adv_n %N>% mutate(centrality_betweenness = centrality_betweenness(directed = T)) %>% 
+  ggraph(layout = "circle") + 
+  geom_edge_link() + 
+  geom_node_point(aes(size = centrality_betweenness, color = centrality_betweenness)) +
+  scale_color_continuous(guide = "legend") +
+  scale_size(range=c(5,12)) +
+  geom_node_text(aes(label = ID),size=4, repel = F, color="white") +
+    labs(title="centrality betweenness", color="", size="") +
+  th + theme(legend.position = "top", plot.title = element_text(size=16))
+
+grid.arrange(a,b,c, nrow=1)
+```
+
+
+### Model
+
+Now we have seen the networks with different settings in the centrality measure. Now how does this correnspond to the attributes. I create three models, one for each centrality measure, and see what attributes affect it. But first i scale the centrality measures so that i can compare the coefficients
+
+<div align="center">
+```{r message=FALSE, warning=FALSE, results='asis'}
+a <- fri_n %N>% 
+  mutate(degree      = scale(centrality_degree(mode="in")),
+         eigen       = scale(centrality_eigen(directed = T)),
+         betweenness = scale(centrality_betweenness(directed = T))) %N>% 
+  as.tibble 
+
+
+m1 <- lm(degree ~ AGE + TENURE + LEVEL, data=a)
+m2 <- lm(eigen ~ AGE + TENURE + LEVEL, data=a)
+m3 <- lm(betweenness ~ AGE + TENURE + LEVEL, data=a)
+
+stargazer(m1,m2,m3, type = "html")
+```
+</div>
+
+
+
+
+
+
+
+
+### Animation
+
+Just for fun i included a simple GIF of the ReportTo network in different layouts:
+
+```{r fig.height=6, fig.width=10, message=FALSE, warning=FALSE}
+g <- rep_n
+V(g)$name <- letters[1:vcount(g)]
+
+layouts <- c("kk", "circle", "randomly", "sphere", "mds")
+
+long2 <- lapply(layouts, create_layout, graph = g) %>%
+  enframe(name = "frame") %>%
+  unnest()
+
+edges_df <- igraph::as_data_frame(g, "edges") %>% 
+  tibble::rowid_to_column() %>%
+  gather(end, name, -rowid) %>%
+  left_join(long2 %>% select(frame, name, x, y)) %>%
+  gather(coord, val, x:y) %>%
+  mutate(col = paste0(coord, if_else(end == "to", "end", ""))) %>%
+  select(frame, rowid, col, val) %>%
+  arrange(frame, rowid) %>%
+  spread(col, val) %>%
+  left_join(long2 %>% select(frame, x, y, start_name = name)) %>%
+  left_join(long2 %>% select(frame, xend = x, yend = y, end_name = name)) %>%
+  unite(edge_name, c("start_name", "end_name"))
+
+a <- ggplot() +
+  geom_segment(data = edges_df, aes(x = x, xend = xend, y = y, yend = yend)) +
+  geom_point(data = long2, aes(x, y), size = 4) +
+  ease_aes("quadratic-in-out") +
+  transition_states(frame, state_length = 0.5) + 
+  labs(title="A few different layouts of ReportTo animated") + 
+  scale_x_continuous(limits=c(-3,3)) + 
+  scale_y_continuous(limits=c(-3,3)) + 
+  th + theme(plot.title = element_text(size=25))
+
+animate(a, nframes = 100, fps = 20, width = 1000, height = 600)
+```
+
+
+
+
+
+
+# Details
+
+Please submit a PDF or HTML version of your notebook on peergrade.io (if you submit HTML, please zip it before - large embedded HTMLs from cause crashing when oppened directly in peergrade). In adittion, include a link to a functioning google colab notebook (mandatory). Please make sure it runs without errors and others can access it (i.e. own test in “anonymous” setting in your browser) .
+
+This notebook should:
+
+* It should solve the questions in an straightforward and elegant way.
+* It should contain enough explanations to enable your fellow students (or others on a similar level of knowledge) to clearly understand what you are doing, why, what is the outcome, how to interpret it, and how to reconstruct the exercise. Be specific and understandable, but brief.
+
+Further process and dates
+
+* You will receive an upload link on peergrade.io by 09.10.209 morning with concrete instructions.
+* The notebook upload is also due 11.10.2019, 11:55pm. Delays are not accepted.
+* After the upload deadline, you will recieve an invitation to peergrade your fellows' exams on peergrade.io. You will be asked for the evaluation of 3 peer-assignments is part of the assignment and mandatory.
+* The peergrade evaluation is due 16.10.2019, 11:55pm. Delays are not accepted!
+
+General Hints
+
+* Keep in mind, you are looking in all cases at directed and unweighted networks.
+* To create networks on a higher lecel of aggregation, you want to aggregate the edgelist the corresponding level before creating a network.
+
+
+
