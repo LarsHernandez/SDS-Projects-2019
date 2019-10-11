@@ -67,6 +67,10 @@ th <- theme(plot.title        = element_text(                  size = 12),
             legend.text       = element_text(color = "black",  size = 10),
             legend.background = element_rect(fill = "white", color = NA),
             legend.key        = element_rect(fill = NA,       color = NA))
+
+th1 <- th + theme(legend.position = "top", 
+             plot.title = element_text(size=16),
+             panel.background  = element_rect(fill = "white", color = NA))
 ```
 
 
@@ -95,6 +99,8 @@ adv_n <- tbl_graph(nodes=atb, edges=adv) %E>% filter(V3 == 1)
 fri_n <- tbl_graph(nodes=atb, edges=fri) %E>% filter(V3 == 1) 
 rep_n <- tbl_graph(nodes=atb, edges=rep) %E>% filter(V3 == 1) 
 
+tot_n <- tbl_graph(nodes=atb, edges=rbind(adv, fri, rep)) %E>% filter(V3 == 1)
+
 adv_n
 #summary(adv_n)
 #summary(fri_n)
@@ -117,7 +123,7 @@ For the different networks. Describe and interpret the results. Answer the follo
 
 * Are relationships like friendship and advice giving usually reciprocal? 
   
-  **yes as can be seen on the graph below they are very close, which means that the relationships are two way. ReportTo doesn't have a score, this makes sense as it by design is a one way relationship**
+  **Yes as can be seen on the graph below they are very close, which means that the relationships are two way. ReportTo doesn't have a score, this makes sense as it by design is a one way relationship**
   
 * Are friends of your friends also your friends?
   
@@ -128,11 +134,12 @@ For the different networks. Describe and interpret the results. Answer the follo
   **As can be seen from the density then they are more likely to be in an advice seeking relationship, and the lowest is ReportsTo which again makes sense**
 
 ```{r fig.height=3, fig.width=10}
-network <- c("Advice", "Friendship", "ReportsTo")
+network <- c("Advice", "Friendship", "ReportsTo", "Total")
 
-densities      <- c(edge_density(adv_n), edge_density(fri_n), edge_density(rep_n))
-transitivities <- c(transitivity(adv_n), transitivity(fri_n), transitivity(rep_n))
-reciprocities  <- c(reciprocity(adv_n),  reciprocity(fri_n),  reciprocity(rep_n))
+densities      <- c(edge_density(adv_n), edge_density(fri_n), edge_density(rep_n), edge_density(tot_n))
+transitivities <- c(transitivity(adv_n), transitivity(fri_n), transitivity(rep_n), transitivity(tot_n))
+reciprocities  <- c(reciprocity(adv_n),  reciprocity(fri_n),  reciprocity(rep_n),  reciprocity(tot_n))
+
 
 df <- data.frame(network, densities, transitivities, reciprocities)
 
@@ -218,8 +225,12 @@ Answer the following questions:
 
 * Are managers from the same 1. department, or on the same 2. hirarchy, 3. age, or 4. tenuere more likely to become friends or give advice? (hint: assortiativity related) 
 
+  **1. Friendship - Level**
+  **2. Advice - Tenure**
+
 * Are friends more likely to give each others advice?
 
+  **They are more likely to have an advice relationship if there is a friendship than they are likely to have friendship if there is an advice relationship**
 
 ```{r fig.height=4, fig.width=10}
 r <- c("value", "type", "network")
@@ -227,19 +238,19 @@ r1 <- c(assortativity(fri_n, V(fri_n)$DEPT, directed = TRUE),               "DEP
 r2 <- c(assortativity(fri_n, V(fri_n)$LEVEL, directed = TRUE),              "LEVEL",  "Friendship")
 r3 <- c(assortativity(fri_n, V(fri_n)$AGE, directed = TRUE),                "AGE",    "Friendship")
 r4 <- c(assortativity(fri_n, V(fri_n)$TENURE, directed = TRUE),             "TENURE", "Friendship")
-r5 <- c(assortativity(fri_n, degree(fri_n, mode = "in"), directed = TRUE),  "POP",    "Friendship")
+r5 <- c(assortativity(fri_n, degree(adv_n, mode = "in"), directed = TRUE),  "POP",    "Friendship")
 
 
 r6 <- c(assortativity(adv_n, V(adv_n)$DEPT, directed = TRUE),               "DEPT",   "Advice")
 r7 <- c(assortativity(adv_n, V(adv_n)$LEVEL, directed = TRUE),              "LEVEL",  "Advice")
 r8 <- c(assortativity(adv_n, V(adv_n)$AGE, directed = TRUE),                "AGE",    "Advice")
 r9 <- c(assortativity(adv_n, V(adv_n)$TENURE, directed = TRUE),             "TENURE", "Advice")
-r10 <- c(assortativity(adv_n, degree(adv_n, mode = "in"), directed = TRUE),  "POP",   "Advice")
+r10 <- c(assortativity(adv_n, degree(fri_n, mode = "in"), directed = TRUE),  "POP",   "Advice")
 
 
 df <- as.data.frame(rbind(r1,r2,r3,r4,r5,r6,r7,r8,r9,r10))
 names(df) <- r
-df$value <- as.numeric(df$value)
+df$value <- as.numeric(as.character(df$value))
 
 ggplot(df, aes(network, value, fill=network)) + geom_col() + 
   facet_wrap(~type, nrow=1) + 
@@ -257,80 +268,63 @@ ggplot(df, aes(network, value, fill=network)) + geom_col() +
 
 Reconstruct the advice and friendship network on the aggregated level of departments, where nodes represent departments and edges the number of cross departmental friendships/advice relationships.
 
-```{r}
-atb_dep <- atb %>% group_by(DEPT) %>% summarize(ID=mean(ID),AGE = mean(AGE))
+**Below is the plot aggregated to department Level, as can be seen department 0 with the CEO is the most different**
 
-atb_g <- unique(atb$DEPT)
+```{r fig.height=4, fig.width=10}
+set.seed(1)
 ss <- atb %>% select(ID, DEPT)
+atb_dep <- atb %>% group_by(DEPT) %>% summarize(ID  = mean(ID), 
+                                                AGE = mean(AGE))
+
 fri_g <- fri %>% 
-  left_join(ss, by=c("V1"="ID")) %>% 
-  left_join(ss, by=c("V2"="ID")) %>% 
+  left_join(ss, by = c("V1"="ID")) %>% 
+  left_join(ss, by = c("V2"="ID")) %>% 
   filter(V3 == 1) %>% 
   group_by(DEPT.x, DEPT.y) %>% 
-  summarize(n=n()) %>% 
+  summarize(n = n()) %>% 
   rename(from = DEPT.x,
          to   = DEPT.y) %>% 
   ungroup() %>% 
-  mutate(from = from+1,
-         to = to +1)
+  mutate(from = from + 1,
+         to = to + 1)
 
-atb_g <- data.frame(ID=atb_g + 1)
-
-fri_grp <- tbl_graph(nodes=as.data.frame(atb_dep), edges=fri_g)
-fri_grp
-fri_grp %>% 
+p1 <- tbl_graph(nodes = atb_dep, edges = fri_g) %>% 
   ggraph(layout = "nicely") + 
-  geom_edge_link(aes(width=n)) + 
-  geom_node_point(size=15, color="#1f78b4") + 
+  geom_edge_link(aes(width = n), alpha=0.3, arrow = arrow(length = unit(4, 'mm')), end_cap = circle(3, 'mm')) + 
+  geom_node_point(size = 12, color = "#1f78b4") + 
   scale_color_continuous(guide = "legend") + 
-  scale_size(range=c(5,12)) +
-  geom_node_text(aes(label = DEPT),size=4, repel = F, color="white")
+  scale_size(range = c(5,12)) +
+  scale_y_continuous(limits=c(11.7,12.8)) + 
+  scale_x_continuous(limits=c(2.5,5)) + 
+  scale_edge_width(range = c(0.3, 3)) +
+  geom_node_text(aes(label = DEPT), size = 4, repel = F, color = "white") +
+  labs(title="Friendship network grouped by department") + th1
 
-
-
-
-atb_g <- unique(atb$DEPT)
-ss <- atb %>% select(ID, DEPT)
 adv_g <- adv %>% 
-  left_join(ss, by=c("V1"="ID")) %>% 
-  left_join(ss, by=c("V2"="ID")) %>% 
+  left_join(ss, by = c("V1" = "ID")) %>% 
+  left_join(ss, by = c("V2" = "ID")) %>% 
   filter(V3 == 1) %>% 
   group_by(DEPT.x, DEPT.y) %>% 
-  summarize(n=n()) %>% 
+  summarize(n = n()) %>% 
   rename(from = DEPT.x,
          to   = DEPT.y) %>% 
   ungroup() %>% 
-  mutate(from = from+1,
-         to = to +1)
+  mutate(from = from + 1,
+         to   = to + 1)
 
-atb_g <- data.frame(ID=atb_g + 1)
-
-adv_grp <- tbl_graph(nodes=as.data.frame(atb_dep), edges=adv_g)
-adv_grp
-adv_grp %>% 
+p2 <- tbl_graph(nodes = as.data.frame(atb_dep), edges = adv_g) %>% 
   ggraph(layout = "nicely") + 
-  geom_edge_link(aes(width=n)) + 
-  geom_node_point(size=15, color="#1f78b4") + 
+  geom_edge_link(aes(width = n), alpha=0.3, arrow = arrow(length = unit(4, 'mm')), end_cap = circle(3, 'mm')) + 
+  geom_node_point(size = 12, color = "#1f78b4") + 
   scale_color_continuous(guide = "legend") + 
-  scale_size(range=c(5,12)) +
-  geom_node_text(aes(label = DEPT),size=4, repel = F, color="white")
-
+  scale_size(range = c(5,12)) +
+  scale_y_continuous(limits=c(-0.1,1.2)) + 
+  scale_x_continuous(limits=c(2.8,4)) + 
+  scale_edge_width(range = c(0.3, 3)) +
+  geom_node_text(aes(label = DEPT),size = 4, repel = F, color = "white") +
+  labs(title = "Advice network grouped by department") + th1
                     
-#adv_dep
-
-#adv_n <- tbl_graph(nodes=atb_dep, edges=adv) %E>% filter(V3 == 1) 
-#fri_n <- tbl_graph(nodes=atb_dep, edges=fri) %E>% filter(V3 == 1) 
-
-
-
-#adv_n %N>% group_by(DEPT) %>% summarize(ID = 1:5) 
-
-
- 
-  #ggraph(layout = "nicely") + 
-  #  geom_edge_link(alpha=0.4) + 
-  #  geom_node_point(aes(color=as.factor(DEPT)), size = 4, alpha=0.8) +
-  #  scale_color_brewer(palette="GnBu")
+grid.arrange(p1, p2, nrow = 1)
 ```
 
 
@@ -341,12 +335,32 @@ adv_grp %>%
 Everything goes. Show us some pretty and informative plots. Choose what to plot, and how, on your own. Interpret the results and share some insights.
 
 ### Layout {.tabset .tabset-fade .tabset-pills}
-Click on the buttons below to see the different layouts of the three networks
+**Click on the buttons below to see the different layouts of the three networks**
+
+#### Friendship
+
+```{r fig.height=6, fig.width=10}
+layouts <- c("circle","nicely","dh","gem","graphopt","grid","mds","sphere","randomly","kk","drl","lgl")
+fri_pp <- list()
+
+for (layout in layouts) {
+  fri_pp[[layout]] <- ggraph(fri_n, layout = layout) +
+     geom_edge_link(alpha=0.4) + 
+     geom_node_point(aes(color=as.factor(DEPT)),size = 4, alpha=0.8, show.legend = F) +
+    scale_color_brewer(palette="GnBu") +
+    labs(title=layout) + 
+    th + theme(panel.background  = element_rect(fill = "white", color = NA))
+}
+
+fri_pp$nrow <- 3
+do.call(grid.arrange, fri_pp)
+
+```
 
 #### Advice
 
 ```{r fig.height=6, fig.width=10}
-layouts <- c("circle","nicely","dh","gem","graphopt","grid","mds","sphere","randomly","kk","drl","lgl")
+
 
 adv_pp <- list()
 
@@ -356,30 +370,10 @@ for (layout in layouts) {
      geom_node_point(aes(color=as.factor(DEPT)),size = 4, alpha=0.8, show.legend = F) +
     scale_color_brewer(palette="GnBu") +
     labs(title=layout) + 
-    th
+    th + theme(panel.background  = element_rect(fill = "white", color = NA))
 }
 adv_pp$nrow <- 3
 do.call(grid.arrange, adv_pp)
-
-```
-
-#### Friendship
-
-```{r fig.height=6, fig.width=10}
-
-fri_pp <- list()
-
-for (layout in layouts) {
-  fri_pp[[layout]] <- ggraph(fri_n, layout = layout) +
-     geom_edge_link(alpha=0.4) + 
-     geom_node_point(aes(color=as.factor(DEPT)),size = 4, alpha=0.8, show.legend = F) +
-    scale_color_brewer(palette="GnBu") +
-    labs(title=layout) + 
-    th
-}
-
-fri_pp$nrow <- 3
-do.call(grid.arrange, fri_pp)
 
 ```
 
@@ -395,7 +389,7 @@ for (layout in layouts) {
      geom_node_point(aes(color=as.factor(DEPT)),size = 4, alpha=0.8, show.legend = F) +
     scale_color_brewer(palette="GnBu") +
     labs(title=layout) +
-    th
+    th + theme(panel.background  = element_rect(fill = "white", color = NA))
 }
 
 rep_pp$nrow <- 3
@@ -407,7 +401,7 @@ do.call(grid.arrange, rep_pp)
 
 ### Centrality {.tabset .tabset-fade .tabset-pills}
 
-The last excercise in layout showed me that when there is many connections, as with advice and friendship the layout is mostly just confusing, but when there are more clusters and less connections between them layout is important.. Because i'm primarily interested in the friendship in this next one i go on with the circle layout as that gives a nice structured view
+**The last excercise in layout showed me that when there is many connections, as with advice and friendship the layout is mostly just confusing, but when there are more clusters and less connections between them layout is important.. Because i'm primarily interested in the friendship in this next one i go on with the circle layout as that gives a nice structured view**
 
 #### Friendship
 
@@ -422,7 +416,7 @@ a <- fri_n %N>% mutate(centrality_dgr = centrality_degree(mode="in")) %>%
   scale_size(range=c(5,12)) +
   geom_node_text(aes(label = ID),size=4, repel = F, color="white") +
   labs(title="centrality degree", color="", size="") +
-  th + theme(legend.position = "top", plot.title = element_text(size=16))
+  th1
 
 b <- fri_n %N>% mutate(centrality_eigen = centrality_eigen(directed = T)) %>% 
   ggraph(layout = "circle") + 
@@ -432,7 +426,7 @@ b <- fri_n %N>% mutate(centrality_eigen = centrality_eigen(directed = T)) %>%
   scale_size(range=c(5,12)) +
   geom_node_text(aes(label = ID),size=4, repel = F, color="white") +
     labs(title="centrality eigen", color="", size="") +
-  th + theme(legend.position = "top", plot.title = element_text(size=16))
+  th1
 
 c <- fri_n %N>% mutate(centrality_betweenness = centrality_betweenness(directed = T)) %>% 
   ggraph(layout = "circle") + 
@@ -442,43 +436,7 @@ c <- fri_n %N>% mutate(centrality_betweenness = centrality_betweenness(directed 
   scale_size(range=c(5,12)) +
   geom_node_text(aes(label = ID),size=4, repel = F, color="white") +
     labs(title="centrality betweenness", color="", size="") +
-  th + theme(legend.position = "top", plot.title = element_text(size=16))
-
-grid.arrange(a,b,c, nrow=1)
-```
-
-#### ReportTO
-
-```{r fig.height=5, fig.width=12, message=FALSE, warning=FALSE}
-a <- rep_n %N>% mutate(centrality_dgr = centrality_degree(mode="in")) %>% 
-  ggraph(layout = "circle") + 
-  geom_edge_link() + 
-  geom_node_point(aes(size = centrality_dgr, color = centrality_dgr)) + 
-  scale_color_continuous(guide = "legend") + 
-  scale_size(range=c(5,12)) +
-  geom_node_text(aes(label = ID),size=4, repel = F, color="white") +
-  labs(title="centrality degree", color="", size="") +
-  th + theme(legend.position = "top", plot.title = element_text(size=16))
-
-b <- rep_n %N>% mutate(centrality_eigen = centrality_eigen(directed = T)) %>% 
-  ggraph(layout = "circle") + 
-  geom_edge_link() + 
-  geom_node_point(aes(size = centrality_eigen, color = centrality_eigen)) + 
-  scale_color_continuous(guide = "legend") + 
-  scale_size(range=c(5,12)) +
-  geom_node_text(aes(label = ID),size=4, repel = F, color="white") +
-    labs(title="centrality eigen", color="", size="") +
-  th + theme(legend.position = "top", plot.title = element_text(size=16))
-
-c <- rep_n %N>% mutate(centrality_betweenness = centrality_betweenness(directed = T)) %>% 
-  ggraph(layout = "circle") + 
-  geom_edge_link() + 
-  geom_node_point(aes(size = centrality_betweenness, color = centrality_betweenness)) +
-  scale_color_continuous(guide = "legend") +
-  scale_size(range=c(5,12)) +
-  geom_node_text(aes(label = ID),size=4, repel = F, color="white") +
-    labs(title="centrality betweenness", color="", size="") +
-  th + theme(legend.position = "top", plot.title = element_text(size=16))
+  th1
 
 grid.arrange(a,b,c, nrow=1)
 ```
@@ -496,7 +454,7 @@ a <- adv_n %N>% mutate(centrality_dgr = centrality_degree(mode="in")) %>%
   scale_size(range=c(5,12)) +
   geom_node_text(aes(label = ID),size=4, repel = F, color="white") +
   labs(title="centrality degree", color="", size="") +
-  th + theme(legend.position = "top", plot.title = element_text(size=16))
+  th1
 
 b <- adv_n %N>% mutate(centrality_eigen = centrality_eigen(directed = T)) %>% 
   ggraph(layout = "circle") + 
@@ -506,7 +464,7 @@ b <- adv_n %N>% mutate(centrality_eigen = centrality_eigen(directed = T)) %>%
   scale_size(range=c(5,12)) +
   geom_node_text(aes(label = ID),size=4, repel = F, color="white") +
     labs(title="centrality eigen", color="", size="") +
-  th + theme(legend.position = "top", plot.title = element_text(size=16))
+  th1
 
 c <- adv_n %N>% mutate(centrality_betweenness = centrality_betweenness(directed = T)) %>% 
   ggraph(layout = "circle") + 
@@ -516,15 +474,50 @@ c <- adv_n %N>% mutate(centrality_betweenness = centrality_betweenness(directed 
   scale_size(range=c(5,12)) +
   geom_node_text(aes(label = ID),size=4, repel = F, color="white") +
     labs(title="centrality betweenness", color="", size="") +
-  th + theme(legend.position = "top", plot.title = element_text(size=16))
+  th1
 
 grid.arrange(a,b,c, nrow=1)
 ```
 
+#### ReportTo
+
+```{r fig.height=5, fig.width=12, message=FALSE, warning=FALSE}
+a <- rep_n %N>% mutate(centrality_dgr = centrality_degree(mode="in")) %>% 
+  ggraph(layout = "circle") + 
+  geom_edge_link() + 
+  geom_node_point(aes(size = centrality_dgr, color = centrality_dgr)) + 
+  scale_color_continuous(guide = "legend") + 
+  scale_size(range=c(5,12)) +
+  geom_node_text(aes(label = ID),size=4, repel = F, color="white") +
+  labs(title="centrality degree", color="", size="") +
+  th1
+
+b <- rep_n %N>% mutate(centrality_eigen = centrality_eigen(directed = T)) %>% 
+  ggraph(layout = "circle") + 
+  geom_edge_link() + 
+  geom_node_point(aes(size = centrality_eigen, color = centrality_eigen)) + 
+  scale_color_continuous(guide = "legend") + 
+  scale_size(range=c(5,12)) +
+  geom_node_text(aes(label = ID),size=4, repel = F, color="white") +
+    labs(title="centrality eigen", color="", size="") +
+  th1
+
+c <- rep_n %N>% mutate(centrality_betweenness = centrality_betweenness(directed = T)) %>% 
+  ggraph(layout = "circle") + 
+  geom_edge_link() + 
+  geom_node_point(aes(size = centrality_betweenness, color = centrality_betweenness)) +
+  scale_color_continuous(guide = "legend") +
+  scale_size(range=c(5,12)) +
+  geom_node_text(aes(label = ID),size=4, repel = F, color="white") +
+    labs(title="centrality betweenness", color="", size="") +
+  th1
+
+grid.arrange(a,b,c, nrow=1)
+```
 
 ### Model
 
-Now we have seen the networks with different settings in the centrality measure. Now how does this correnspond to the attributes. I create three models, one for each centrality measure, and see what attributes affect it. But first i scale the centrality measures so that i can compare the coefficients
+**Now we have seen the networks with different settings in the centrality measure. Now how does this correnspond to the attributes. I create three models, one for each centrality measure, and see what attributes affect it. But first i scale the centrality measures so that i can compare the coefficients**
 
 <div align="center">
 ```{r message=FALSE, warning=FALSE, results='asis'}
@@ -545,7 +538,50 @@ stargazer(m1,m2,m3, type = "html")
 
 
 
+### Subnetwork
 
+**As we have seen some of the employies are a bit loose with the friendship connection. Because of this i remove the ones who gives most friendship connections to get a more simple network, so i remove id 17, 11 and 19, and then i do size by age**
+
+```{r fig.height=12, fig.width=12}
+fri_n2 <- tbl_graph(nodes=atb, edges=fri) %E>% filter(V3 == 1) %N>% filter(!(ID %in% c(17,11,19)))
+
+fri2_pp <- list()
+
+for (layout in layouts) {
+  fri2_pp[[layout]] <- ggraph(fri_n2, layout = layout) +
+     geom_edge_link(alpha=0.4) + 
+     geom_node_point(aes(size=AGE), alpha=0.8, show.legend = F) +
+    scale_color_brewer(palette="GnBu") +
+    labs(title=layout) + 
+    th + theme(panel.background  = element_rect(fill = "white", color = NA))
+}
+
+fri2_pp$nrow <- 3
+do.call(grid.arrange, fri2_pp)
+
+
+fri_n2 %>% 
+  ggraph(layout = "nicely") + 
+  geom_edge_link() + 
+  geom_node_point() +
+    labs(title="centrality betweenness", color="", size="") +
+  th1
+
+```
+
+```{r fig.height=20, fig.width=10}
+fri2_pp <- list()
+layouts <- rep(1:200)
+
+for (layout in layouts) {
+  fri2_pp[[layout]] <- ggraph(fri_n2, layout = "nicely") +
+     geom_edge_link() + 
+    theme_void()
+}
+
+fri2_pp$nrow <- 20
+do.call(grid.arrange, fri2_pp)
+```
 
 
 
@@ -585,7 +621,7 @@ a <- ggplot() +
   labs(title="A few different layouts of ReportTo animated") + 
   scale_x_continuous(limits=c(-3,3)) + 
   scale_y_continuous(limits=c(-3,3)) + 
-  th + theme(plot.title = element_text(size=25))
+  th1
 
 animate(a, nframes = 100, fps = 20, width = 1000, height = 600)
 ```
