@@ -290,7 +290,7 @@ fri_g <- fri %>%
 
 p1 <- tbl_graph(nodes = atb_dep, edges = fri_g) %>% 
   ggraph(layout = "nicely") + 
-  geom_edge_link(aes(width = n), alpha=0.3, arrow = arrow(length = unit(4, 'mm')), end_cap = circle(3, 'mm')) + 
+  geom_edge_fan(aes(width = n), alpha=0.3, arrow = arrow(length = unit(4, 'mm')), end_cap = circle(3, 'mm')) + 
   geom_node_point(size = 12, color = "#1f78b4") + 
   scale_color_continuous(guide = "legend") + 
   scale_size(range = c(5,12)) +
@@ -314,7 +314,7 @@ adv_g <- adv %>%
 
 p2 <- tbl_graph(nodes = as.data.frame(atb_dep), edges = adv_g) %>% 
   ggraph(layout = "nicely") + 
-  geom_edge_link(aes(width = n), alpha=0.3, arrow = arrow(length = unit(4, 'mm')), end_cap = circle(3, 'mm')) + 
+  geom_edge_fan(aes(width = n), alpha=0.3, arrow = arrow(length = unit(4, 'mm')), end_cap = circle(3, 'mm')) + 
   geom_node_point(size = 12, color = "#1f78b4") + 
   scale_color_continuous(guide = "legend") + 
   scale_size(range = c(5,12)) +

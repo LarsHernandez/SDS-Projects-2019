@@ -1,0 +1,393 @@
+---
+title: "M2 Assignment 2"
+author: "Lars Nielsen"
+date: "08/10/2019"
+output:
+  html_document:
+    code_folding: hide
+    theme: flatly
+    toc: yes
+    toc_float:
+      collapsed: no
+---
+# Hate-speech and offensive language on Twitter
+## M2 Individual Assignment 2 - Working with Natural Language
+
+This assignment is less structured than previous individual assignments.
+
+You are given a collection of approximately 25k tweets that have been manually (human) annotated.  **class** denotes: 
+
+  - 0 - hate speech, 
+  - 1 - offensive language, 
+  - 2 - neither
+
+```{r message=FALSE}
+library(tidyverse)   #
+library(tidytext)    #
+library(tm)          # Text mining
+library(topicmodels) # LDA (not discriminant analysis)
+library(gridExtra)   #
+library(text2vec)    # 
+library(quanteda)    #
+library(rsample)     # Splitting data for model
+library(glmnet)      # Elastic net
+library(broom)       # Formatting mdoel output
+library(yardstick)
+library(knitr)
+library(kableExtra)
+library(uwot)
+
+#hate <- read_csv("https://transfer.sh/Zgwhy/twitter_hate_speech.csv")
+hate <- read_csv("twitter_hate_speech.csv") %>% rename(id = X1)
+
+base <- "#1f78b4"
+
+data(stop_words)
+```
+
+
+### 1. Preprocessing and vectorizaion. 
+Justify your choices and explain possible alternatives (e.g. removing stopwords, identifying bi/tri-grams, removing verbs or use of stemming, lemmatization etc.)
+
+- Create a bag-of-words representation, apply TF-IDF and dimensionality reduction (LSA-topic modelling) to transform your corpus into a feature matrix.
+
+  **I create a tidy bag of words. I remove stop words, all digits and "http", "t.co", and "rt"**
+
+```{r fig.height=4, fig.width=10, message=FALSE, warning=FALSE}
+tidy_hate <- hate %>% 
+  unnest_tokens(word, tweet) %>% 
+  anti_join(stop_words, by = "word") %>% 
+  filter(!str_detect(word, "[:digit:]")) %>% 
+  filter(!(word %in% c("http","t.co", "rt")))
+
+summ_hate <- tidy_hate %>% count(word, sort = TRUE)
+
+a <- summ_hate %>% 
+  top_n(20) %>% 
+  ggplot(aes(reorder(word,n), n)) + 
+    geom_col(fill=base) + 
+    coord_flip() + 
+    labs(title="Most used words", x="")
+
+b <- summ_hate %>% ggplot(aes(n)) + geom_histogram(bins=200, fill=base) + scale_y_log10() + scale_x_continuous(limits = c(0,500)) + labs(title="Histogram of count")
+
+c <- hate %>% 
+  mutate(class = recode(class,
+                        "0" = "Hate\nspeech",
+                        "1" = "Offensive\nlanguage",
+                        "2" = "OK")) %>% 
+  group_by(class) %>% 
+  summarize(N=n()) %>% 
+  ggplot(aes(class,N)) + 
+  geom_col(fill=base) +
+  labs(title="Groupings of class variable", x="")
+
+grid.arrange(a,b,c,nrow=1)
+```
+
+- Train a word-embedding model of your choice (Word2Vec, GloVe or Fasttext) and use it to calculate average-vector-representations for the tweets.
+
+  **I create a Word2Vec model and print a head of the dataframe**
+
+```{r}
+corpus_hate <- hate %>% corpus(docid_field = "id", text_field = "tweet")
+
+toks_hate <- tokens(corpus_hate, what = "word") %>%
+  tokens_tolower() %>%
+  tokens(remove_punct  = TRUE, 
+         remove_symbols = TRUE)
+
+feats <- dfm(toks_hate, verbose = TRUE) %>%
+  dfm_trim(min_termfreq = 5) %>%
+  featnames()
+
+fcm_hate <- fcm(toks_hate, 
+                 context = "window", 
+                 count = "weighted", 
+                 weights = 1 / (1:5), 
+                 tri = TRUE)
+
+glove <- GlobalVectors$new(word_vectors_size = 50, vocabulary = featnames(fcm_hate), x_max = 10)
+
+wv_hate <- fit_transform(fcm_hate, glove, n_iter = 20)
+
+wv_hate %<>% as.data.frame() %>%
+  rownames_to_column(var = "word") %>% 
+  as_tibble()
+
+wv_hate %>% head()
+
+hate_tidy2 <- toks_hate %>% 
+  dfm() %>% 
+  tidy()
+
+vec_hate <- hate_tidy2 %>%
+  inner_join(wv_hate, by = c("term" = "word"))
+
+vec_hate %>% head()
+
+vec_hate %<>%
+  select(-term, -count) %>%
+  group_by(document) %>%
+  summarise_all(mean) %>% 
+  head(5)
+
+umap(wv_hate %>% column_to_rownames("word"), 
+     n_neighbors = 15, metric = "cosine", min_dist = 0.01, 
+     scale = TRUE, verbose = TRUE, n_threads = 8) %>% 
+  as.data.frame() %>% 
+  ggplot(aes(x = V1, y = V2)) + 
+  geom_point(shape = 21, alpha = 0.5)
+```
+
+
+
+### 2. Explore and compare the 2 "classes of interest" - hate speech vs offensive language. 
+
+- Can you see differences by using simple count-based approaches?
+
+  **Yes if you look at the columns you see some differences**
+
+```{r fig.height=4, fig.width=10}
+tidy_hate %>% 
+  mutate(class = recode(class,
+                        "0" = "Hate speech",
+                        "1" = "Offensive language",
+                        "2" = "OK")) %>% 
+  count(word, class) %>% 
+  group_by(class) %>% 
+  top_n(10) %>% 
+  ungroup() %>% 
+  ggplot(aes(reorder_within(word,n,class), n)) + 
+    geom_col(fill=base) + 
+    coord_flip() + 
+    scale_x_reordered() +
+    labs(title="Most used words by category", x="") + 
+    facet_wrap(~class, scales="free")
+```
+
+- Can you identify themes (aka clusters / topics) that are specific for one class or another? Explore them using, e.g. simple crosstabs - topic vs. class and to get more detailed insights within-cluster top (TF-IDF) terms. (This step requires preprocessed/tokenized inputs).
+
+  **I have clusteded by LDA and i find that it is good at grouping especially the OK speech in group 1**
+
+```{r fig.height=4, fig.width=10}
+
+
+dtm_hate <- tidy_hate %>%
+  count(word, class) %>%
+  cast_dtm(document = class, term = word, value = n, weighting = tm::weightTf)
+
+#dtm_hate
+
+dtm_hate_sparse <- dtm_hate %>% removeSparseTerms(sparse = .9995)
+rowTotals       <- apply(dtm_hate_sparse , 1, sum)
+dtm_hate_sparse <- dtm_hate_sparse[rowTotals > 0, ]
+lda_hate        <- dtm_hate_sparse %>% LDA(k = 3, method = "Gibbs")
+
+a <- lda_hate %>% 
+  tidy(matrix = "beta") %>%
+  group_by(topic) %>%
+  arrange(topic, desc(beta)) %>%
+  slice(1:15) %>%
+  ggplot(aes(reorder(term,beta), beta, fill = as.factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  coord_flip() +
+  scale_x_reordered() +
+  scale_fill_brewer(palette="Paired") +
+  labs(title = "Top 15 terms in each LDA topic",
+       x = NULL, y = expression(beta)) +
+  facet_wrap(~ topic, ncol = 3, scales = "free")
+
+
+
+b <- lda_hate %>% 
+  tidy(matrix = "gamma") %>% 
+    mutate(document = recode(document,
+                        "0" = "Hate\nspeech",
+                        "1" = "Offensive\nlanguage",
+                        "2" = "OK")) %>% 
+  ggplot(aes(document, gamma, fill=as.factor(topic))) + 
+  geom_col() + 
+  scale_fill_brewer(palette="Paired") + 
+  labs(title="Topics by document", fill = "Topic")
+
+grid.arrange(a,b,layout_matrix = rbind(c(1,1,2)))
+```
+
+
+### 3. Build an ML model that can predict hate speech
+Use the ML pipeline (learned in M1) to build a classification model that can identify offensive language and hate speech. It is not an easy task to get good results. Experiment with different models on the two types of text-representations that you create in 2.
+
+  **I run an elastic net model on the data, and i find for each category what words is counted high and low in categorizing the tweets**
+
+```{r fig.height=4, fig.width=10}
+tidy_hate <- hate %>%
+    mutate(class = recode(class,
+                        "0" = "Hate\nspeech",
+                        "1" = "Offensive\nlanguage",
+                        "2" = "OK")) %>% 
+  unnest_tokens(word, tweet) %>%
+  group_by(word) %>%
+  filter(n() > 20) %>%
+  ungroup()  %>% 
+  anti_join(stop_words, by = "word") %>% 
+  filter(!str_detect(word, "[:digit:]")) %>% 
+  filter(!(word %in% c("http","t.co", "rt")))
+
+hate_split <- hate %>% select(id) %>% initial_split()
+train_data <- training(hate_split)
+test_data  <- testing(hate_split)
+
+sparse_words <- tidy_hate %>%
+  count(id, word) %>%
+  inner_join(train_data) %>%
+  cast_sparse(id, word, n)
+
+word_rownames <- as.integer(rownames(sparse_words))
+
+joined <- data_frame(id = word_rownames) %>%
+  left_join(hate %>%
+    select(id, class))
+
+model0 <- cv.glmnet(sparse_words, joined$class == 0, family = "binomial",keep = TRUE)
+model1 <- cv.glmnet(sparse_words, joined$class == 1, family = "binomial",keep = TRUE)
+model2 <- cv.glmnet(sparse_words, joined$class == 2, family = "binomial",keep = TRUE)
+
+plot(model0)
+
+a0 <- model0$glmnet.fit %>%
+  tidy() %>%
+  filter(lambda == model0$lambda.1se) %>%
+  group_by(estimate > 0) %>%
+  top_n(7, abs(estimate)) %>%
+  ungroup() %>%
+  ggplot(aes(fct_reorder(term, estimate), estimate, fill = estimate > 0)) +
+  geom_col(alpha = 0.8, show.legend = FALSE) +
+  coord_flip() +
+  scale_fill_brewer(palette = "Paired") +
+  labs( title = "Hate Speech - coef", x="")
+
+a1 <- model1$glmnet.fit %>%
+  tidy() %>%
+  filter(lambda == model1$lambda.1se) %>%
+  group_by(estimate > 0) %>%
+  top_n(7, abs(estimate)) %>%
+  ungroup() %>%
+  ggplot(aes(fct_reorder(term, estimate), estimate, fill = estimate > 0)) +
+  geom_col(alpha = 0.8, show.legend = FALSE) +
+  coord_flip() +
+    scale_fill_brewer(palette = "Paired") +
+  labs( title = "Offensice Language - coef", x="")
+
+a2 <- model2$glmnet.fit %>%
+  tidy() %>%
+  filter(lambda == model2$lambda.1se) %>%
+  group_by(estimate > 0) %>%
+  top_n(7, abs(estimate)) %>%
+  ungroup() %>%
+  ggplot(aes(fct_reorder(term, estimate), estimate, fill = estimate > 0)) +
+  geom_col(alpha = 0.8, show.legend = FALSE) +
+  coord_flip() +
+    scale_fill_brewer(palette = "Paired") +
+  labs( title = "OK - coef", x="")
+
+grid.arrange(a0,a1,a2, nrow=1)
+
+```
+
+**With these three models i can't calculate a confusion matrix, but if i do one single multinomial model i can. I have printed the results below compared with a random assignment that is weighted by the probarbility of each category in the whole dataset.**
+
+```{r}
+model <- cv.glmnet(sparse_words, joined$class, family = "multinomial", keep = T)
+
+coefs <- model$glmnet.fit %>%
+  tidy() %>%
+  filter(lambda == model$lambda.1se)
+
+intercept <- coefs %>%
+  filter(term == "(Intercept)") %>%
+  pull(estimate)
+
+classifications <- tidy_hate %>%
+  inner_join(test_data) %>%
+  inner_join(coefs, by = c("word" = "term")) %>%
+  group_by(class.y, id) %>%
+  summarize(score = sum(estimate)) %>%
+  mutate(probability = plogis(0 + score))
+
+res <- classifications %>% 
+  group_by(id) %>% 
+  filter(probability == max(probability)) %>% 
+  left_join(hate, by = "id")
+
+result <- table(res$class, res$class.y)
+#result
+
+```
+
+
+
+
+```{r}
+
+
+prop <- hate %>% 
+  mutate(class = recode(class,
+                        "0" = "Hate\nspeech",
+                        "1" = "Offensive\nlanguage",
+                        "2" = "OK")) %>% 
+  group_by(class) %>% 
+  summarize(n=n())%>%
+  mutate(freq = n / sum(n))
+prop
+
+rand <- sample(c(0,1,2),nrow(res),replace=T,prob=prop$freq)
+ran <- table(res$class, rand)
+
+
+rand <- sample(c(0,1,2),nrow(res),replace=T,prob=c(0.1,0.1,0.8))
+ran <- table(res$class, rand)
+
+kable(cbind(result,ran)) %>% kable_styling(c("bordered","condensed","striped"), full_width = F) %>% 
+  add_header_above(c("Category"=1,"Elastic Net"=3, "Random Assignment" = 3))
+```
+
+**From this confusion matrix we see that it's actually well performing, i then compare it with the metrics, and again we see that the model is doing well at classification**
+
+
+```{r}
+ran <- rbind(spec(ran), precision(ran), accuracy(ran), recall(ran), npv(ran))
+res <- rbind(spec(result), precision(result), accuracy(result), recall(result), npv(result))
+
+res$model <- "Elastic Net"
+ran$model <- "Random Assignment"
+df <- rbind(res, ran)
+
+ggplot(df, aes(.metric, .estimate, fill = reorder(model, desc(.estimate)))) + 
+  geom_col(position = "dodge", width = 0.6) + 
+  scale_fill_brewer(palette="Paired") + 
+  labs(title = "Model performance", 
+       subtitle = "", 
+       fill = "Predictive Model")
+```
+
+
+The best-reported results for this dataset are.
+
+| Class         | Precision     |
+| ------------- |:-------------:|
+| 0             |0.61           |
+| 1             |0.91           |
+| 2             |0.95           |
+| Overall       |0.91           |
+
+Here advanced NLP feature engineering has been used, and thus everything around an overall accuracy of 85 is fine. You will see that it is not easy to lift class 0 accuracy over 0.5
+
+Good Luck!
+
+
+
+
+
+
+
