@@ -1,2 +1,0 @@
-"0","c <- people_s[education_raw %like% ""Master""][order(-followers)]"
-"0","head(c)"

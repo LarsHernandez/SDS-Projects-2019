@@ -1,4 +1,0 @@
-"0","e1 <- trips_s[, .(mean_dur = mean(dur_days)), by = year(date_start)][year>1970 & year < 2019]"
-"0","ggplot(e1, aes(year, mean_dur)) + "
-"0","  scale_y_continuous() +"
-"0","  geom_line()"

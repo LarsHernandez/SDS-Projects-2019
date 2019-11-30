@@ -1,2 +1,0 @@
-"0","a <- trips_s[, .N, by = country][order(-N)]"
-"0","head(a)"

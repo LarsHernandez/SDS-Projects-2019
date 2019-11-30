@@ -1,3 +1,0 @@
-"0","trips_s[people, on = ""username"", c(""work_raw"") := .(i.work_raw)]"
-"0","trips_s[, dev := work_raw %like% ""Software Dev""]"
-"0","trips_s[,.(mean_dur = mean(dur_days)), by = dev]"

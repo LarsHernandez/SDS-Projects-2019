@@ -1,3 +1,0 @@
-"0","countrylist[, country_code := alpha_2]"
-"0","trips_s[countrylist, on = ""country_code"", c(""region"", ""sub_region"") := .(i.region, i.sub_region)]"
-"0","head(trips_s[,.(country_code, dur_days, region, sub_region)])"

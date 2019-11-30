@@ -1,2 +1,0 @@
-"0","b <- trips_s[year(date_start) == 2017, .N, by = country][order(-N)]"
-"0","head(b)"
